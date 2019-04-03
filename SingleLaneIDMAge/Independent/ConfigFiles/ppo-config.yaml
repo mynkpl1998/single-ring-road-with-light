@@ -18,6 +18,7 @@ RingRoadAge-Independent:
     grad_clip: 0.5
     horizon: None
     batch_mode: truncate_episodes
+    observation_filter: "NoFilter"
     multiagent:
       policy_graphs: None
       policy_mapping_fn: None
