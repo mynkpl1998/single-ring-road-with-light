@@ -140,7 +140,6 @@ dependencies:
     - lz4==2.1.6
     - matplotlib==3.0.3
     - more-itertools==6.0.0
-    - mpi4py==3.0.1
     - parso==0.3.4
     - pexpect==4.6.0
     - pickleshare==0.7.5
