@@ -42,10 +42,11 @@ class Wrapper(gym.Env):
 
 
 	def step(self, action):
-		obs, reward, done, info_dict = self.env.step(action)
-		self.queue.addObs(obs.copy())
+		
+		obs = self.env.step(action)
+		#self.queue.addObs(obs.copy())
 
-		return (self.queue.getObs(), reward, done, info_dict)
+		return obs
 
 
 
@@ -78,6 +79,7 @@ if __name__ == "__main__":
 	#controller = RLController(render=False)
 	print(env.observation_space)
 	print(env.action_space)
+	print(env.env.action_map)
 
 	epsiodes = args.num_episodes
 	horizon = args.episode_length
@@ -91,7 +93,8 @@ if __name__ == "__main__":
 
 		for step in range(0, horizon):
 
-			action = controller.getAction(env.queue.queue[-1])
+			#action = controller.getAction(env.queue.queue[-1])
+			action = 0
 			#action = controller.getAction(prev_state)
 			next_state, reward, done, info_dict = env.step(action)
 

@@ -37,7 +37,7 @@ class ApexRLController():
 		from ray.tune.registry import register_env
 		from ray import tune
 		import yaml
-		from IDM.SimulatorCode.main_env import Wrapper
+		from SingleLaneIDM.SimulatorCode.main_env import Wrapper
 
 		from ray.rllib.agents.dqn.apex import ApexAgent
 		import ray.rllib.agents.dqn as apex
@@ -62,7 +62,7 @@ class ApexRLController():
 		register_env(env_creator_name, lambda config: Wrapper(sim_config))
 
 		ray.init()
-		self.agent = ApexAgent(env="tsim-v0", config=exp_config["IDM"]["config"])
+		self.agent = ApexAgent(env="tsim-v0", config=exp_config[exp_name]["config"])
 		self.agent.restore(checkpoint_path)
 		self.agent.optimizer.foreach_evaluator(lambda ev: ev.for_policy(lambda pi:pi.set_epsilon(0.0), policy_id="default"))
 
@@ -106,7 +106,8 @@ class PPORLController():
 		#self.agent.optimizer.foreach_evaluator(lambda ev: ev.for_policy(lambda pi:pi.set_epsilon(0.0), policy_id="default"))
 
 	
-	def getAction(self, state, lstm_state):
+	def getAction(self, state):
 
-		action, lstm_state, vf = self.agent.compute_action(state, lstm_state)
-		return action, lstm_state
+		action = self.agent.compute_action(state)
+		#print(action)
+		return action

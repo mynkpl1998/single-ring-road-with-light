@@ -19,7 +19,7 @@ import gym
 from gym.spaces import Discrete, Box
 from gym.envs.registration import EnvSpec
 import random
-from tfLight import RandomIntervalGenerator
+from SingleLaneIDM.SimulatorCode.tfLight import RandomIntervalGenerator
 
 # Action Maping
 # action 0 - Accelerate
@@ -76,7 +76,8 @@ class TrafficSim(gym.Env):
             print("Invalid update graphs method : %s"%(self.update_graphs_method))
             sys.exit(-1)
 
-        self.densities = [0.7]
+        self.densities = [0.2, 0.3, 0.4, 0.5, 0.6, 0.7]
+        #self.densities = [0.4]
 
         if ((self.view_size % self.cell_size) != 0):
             print("Error : View Size should be divisible by cell size")
@@ -87,7 +88,7 @@ class TrafficSim(gym.Env):
         self.vel_grid = np.zeros((1, self.num_cols), dtype=np.float32)
 
         #print(self.num_cols)
-        self.observation_space = Box(-float("inf"), float("inf"), shape=((self.num_cols + 1), ), dtype=np.float)
+        self.observation_space = Box(-float("inf"), float("inf"), shape=((2 * self.num_cols), ), dtype=np.float)
         self.region_maping = {}
 
         if (self.comm_mode):
@@ -433,14 +434,14 @@ class TrafficSim(gym.Env):
         if self.update_graphs_method == "occ":
             half = int(self.num_cols/2)
             ahead_part1 = np.flip(self.occ_grid[0][half:], axis=0)
-            ahead_part2 = np.flip(self.occ_grid[1][half:], axis=0)
-            ahead_part3 = np.flip(self.occ_grid[2][half:], axis=0)
-            ahead_part = {0: ahead_part1, 1: ahead_part2, 2: ahead_part3}
+            #ahead_part2 = np.flip(self.occ_grid[1][half:], axis=0)
+            #ahead_part3 = np.flip(self.occ_grid[2][half:], axis=0)
+            ahead_part = {0: ahead_part1}
 
             back_part1 = np.flip(self.occ_grid[0][0:half], axis=0)
-            back_part2 = np.flip(self.occ_grid[1][0:half], axis=0)
-            back_part3 = np.flip(self.occ_grid[2][0:half], axis=0)
-            back_part = {0: back_part1, 1: back_part2, 2: back_part3}
+            #back_part2 = np.flip(self.occ_grid[1][0:half], axis=0)
+            #back_part3 = np.flip(self.occ_grid[2][0:half], axis=0)
+            back_part = {0: back_part1}
 
             space = int(self.num_cols/6)
             #print(space)
@@ -459,9 +460,9 @@ class TrafficSim(gym.Env):
             #self.lidar_data[line3][:][:] = 0
             #self.lidar_data[line4][:][:] = 0
 
-            for lane in range(0, 3):
+            for lane in range(0, 1):
 
-                for i in range(0, ahead_part3.shape[0]):
+                for i in range(0, ahead_part1.shape[0]):
 
                     if ahead_part[lane][i] == 1:
                         self.lidar_data[mid_map[lane]][i][0] = 0
@@ -478,7 +479,7 @@ class TrafficSim(gym.Env):
                         self.lidar_data[mid_map[lane]][i][1] = 0
                         self.lidar_data[mid_map[lane]][i][2] = 0
 
-            for lane in range(0, 3):
+            for lane in range(0, 1):
 
                 for i in range(0, back_part1.shape[0]):
 
@@ -582,6 +583,7 @@ class TrafficSim(gym.Env):
             density = self.densities[np.random.randint(0, len(self.densities))]
 
         self.cur_density_val = density
+        #self.cur_density_val = 0.3
 
         self.time_elapsed = 0.0
         self.num_steps = 0
@@ -603,7 +605,8 @@ class TrafficSim(gym.Env):
         self.track_vel_list[0] = {}
 
         self.agent_lane = 0
-        self.lane_map_list[self.agent_lane][0][self.lab2ind['agent']] = 1
+        loc = np.random.randint(0, len(self.lane_map_list[self.agent_lane]))
+        self.lane_map_list[self.agent_lane][loc][self.lab2ind['agent']] = 1
         self.agent_id = None
 
         del self.lane_map
@@ -626,17 +629,20 @@ class TrafficSim(gym.Env):
             self.set_red_light = False
             self.genObj.reset()
             self.genPts = self.genObj.gen()
-            print(self.genPts)
+            #print(self.genPts)
             self.expanded_pts = self.expandPts(self.genPts)
         
         if self.render:
             self.draw_graphics(0.0, 0, None)
 
-        #res = np.array((self.occ_grid, self.vel_grid)).flatten()
-        agent_vel = self.lane_map_list[self.agent_lane][0][self.lab2ind["vel"]]
-        agent_vel = np.array(agent_vel).reshape(1,)
+        res = np.array((self.occ_grid, self.vel_grid)).flatten()
+        #print("Occ : ", self.occ_grid)
+        #print("Vel : ", self.vel_grid)
+        #print("----------------------")
+        #agent_vel = self.lane_map_list[self.agent_lane][0][self.lab2ind["vel"]]
+        #agent_vel = np.array(agent_vel).reshape(1,)
 
-        res = np.append(self.occ_grid, agent_vel)
+        #res = np.append(self.occ_grid, agent_vel)
         
         return res.copy()
 
@@ -1096,40 +1102,10 @@ class TrafficSim(gym.Env):
                         self.lane_map_list = copy.deepcopy(copy_lane_map)
                         '''
     def calculate_reward(self):
-        """ Taken from : https://flow-project.github.io/papers/08569485.pdf """
-        agent_des = self.max_vel
-        others_des = self.other_max_vel
-        v_des_vector = []
 
-        for i in range(0, len(self.lane_map_list[0])-1):
-            v_des_vector.append(others_des)
-        v_des_vector.append(agent_des)
-        v_des_vector = np.array(v_des_vector)
-
-        v_vector = []
-        for veh in self.lane_map_list[0]:
-            v_vector.append(veh[self.lab2ind["vel"]])
-
-        assert len(v_vector) == len(v_des_vector)
-        v_vector = v_vector - v_des_vector
-
-        vdes = np.linalg.norm(v_des_vector)
-        v = np.linalg.norm(v_vector)
-        rew = max(0, vdes - v)
-        
         agent_idx = [i for i, tup in enumerate(self.lane_map_list[self.agent_lane]) if tup[self.lab2ind["agent"]] == 1][0]
-        if agent_idx == 0:
-            angle_diff = np.deg2rad((360 + self.lane_map_list[self.agent_lane][agent_idx][self.lab2ind["angle"]]) - self.lane_map_list[self.agent_lane][-1][self.lab2ind["angle"]])
-            arc_len = (angle_diff * self.lane_radius[self.agent_lane])/ self.x_pixel_one_metre
-            follower_speed = self.lane_map_list[self.agent_lane][-1][self.lab2ind["vel"]]
-        else:
-            angle_diff = np.deg2rad(self.lane_map_list[self.agent_lane][agent_idx][self.lab2ind["angle"]] - self.lane_map_list[self.agent_lane][agent_idx-1][self.lab2ind["angle"]])
-            arc_len = ((angle_diff * self.lane_radius[self.agent_lane])/ self.x_pixel_one_metre) - self.car_length
-            follower_speed = self.lane_map_list[self.agent_lane][agent_idx-1][self.lab2ind["vel"]]
-
-        headway_reward = max(self.headway_thershold -  (self.time_period * arc_len), 0)
-        #print(headway_reward)
-        return rew - (self.reward_alpha * headway_reward)
+        rew = (self.lane_map_list[self.agent_lane][agent_idx][self.lab2ind["vel"]])/self.max_vel
+        return rew
 
     def toggleTrafficLight(self):
         self.set_red_light = not self.set_red_light
@@ -1142,7 +1118,7 @@ class TrafficSim(gym.Env):
         if self.enable_traffic_light:
             if self.num_steps in self.expanded_pts:
                 self.toggleTrafficLight()
-                print("Toggled Traffic Light , Red : ", self.set_red_light)
+                #print("Toggled Traffic Light , Red : ", self.set_red_light)
 
         '''
 
@@ -1400,26 +1376,31 @@ class TrafficSim(gym.Env):
 
         self.time_elapsed += self.time_period
 
-        if self.comm_mode:
-            if (query == "NULL"):
-                reward += 0.5
-
         self.lane_map_list[0] = sorted(self.lane_map_list[0], key=lambda x: x[self.lab2ind['angle']])
         reward = self.calculate_reward()
+        #print("Before Query", reward)
+        if self.comm_mode:
+            if (query == "NULL"):
+                reward += 0.0
+        #print("After query : ", reward)
 
-        #res = np.array((self.occ_grid, self.vel_grid)).flatten()
-        agent_idx = [i for i, tup in enumerate(self.lane_map_list[self.agent_lane]) if tup[self.lab2ind["agent"]] == 1][0]
-        agent_vel = self.lane_map_list[self.agent_lane][agent_idx][self.lab2ind["vel"]]
-        agent_vel = agent_vel.reshape(1, )
+        res = np.array((self.occ_grid, self.vel_grid)).flatten()
+        #print("Occ : ", self.occ_grid)
+        #print("Vel : ", self.vel_grid)
+        #print("----------------------")
+        #agent_idx = [i for i, tup in enumerate(self.lane_map_list[self.agent_lane]) if tup[self.lab2ind["agent"]] == 1][0]
+        #agent_vel = self.lane_map_list[self.agent_lane][agent_idx][self.lab2ind["vel"]]
+        #agent_vel = agent_vel.reshape(1, )
 
         if self.render:
             self.draw_graphics(reward, action, query)
 
-        res = np.append(self.occ_grid.flatten(), agent_vel)
+        #res = np.append(self.occ_grid.flatten(), agent_vel)
         #res = np.array((self.occ_grid, self.vel_grid)).flatten()
+        '''
         if game_over:
             res[-1] = -1 # this is done to denote terminal state
-
+        '''
         return (res.copy(), reward, game_over, {})
 
     def destroy_window(self):
@@ -1442,7 +1423,7 @@ if __name__ == "__main__":
 
     #env.reset()
     for i in range(0, 1):
-        state = env.reset(0.7)
+        state = env.reset(random.sample(self.densities))
         print(state)
         done = False
         total_reward = 0.0
