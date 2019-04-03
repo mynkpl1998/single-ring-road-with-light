@@ -8,8 +8,7 @@ We currently support only Linux OS. Users are advised to use the virtual environ
 
 ```
 git clone https://github.com/mynkpl1998/single-ring-road-with-light.git
-
-cd /single-ring-road-with-light
+cd single-ring-road-with-light/
 conda env create -f environment.yml
 ```
 
