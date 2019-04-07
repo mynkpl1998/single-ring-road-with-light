@@ -106,3 +106,4 @@ if __name__ == "__main__":
 				break
 
 		print("Episode Lasted for %d time steps and accumulated %.2f Reward"%(step+1, episode_reward))
+		print("Time Elapsed : %.2f"%(env.env.time_elapsed))

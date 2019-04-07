@@ -404,7 +404,7 @@ class TrafficSim(gym.Env):
                 area_text = self.font.render(area_string, False, (0, 0, 0))
                 reward_string = 'Agent Reward : %.2f' % (reward)
                 reward_text = self.font.render(reward_string, False, (0, 0, 0))
-                time_string = 'Time Elapsed : %d s' % (int(self.time_elapsed))
+                time_string = 'Time Elapsed : %.1f s' % (self.time_elapsed)
                 time_text = self.font.render(time_string, False, (0, 0, 0))
                 sample_string = 'Sampling Rate : %d Hz' % (
                     int(1/self.time_period))

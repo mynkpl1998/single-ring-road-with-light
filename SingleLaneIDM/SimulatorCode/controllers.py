@@ -159,6 +159,6 @@ class PPORLControllerWithActionProbs():
 		result = self.agent.get_policy('default').compute_single_action(filtered_obs, state, None, None, None, clip_actions=self.agent.config["clip_actions"])
 		
 		action = result[0]
-		probs = softmax(result[2]["logits"])
+		probs = softmax(result[2]["logits"]) # imported from scipy.special
 		
 		return action, probs

@@ -44,6 +44,7 @@ app.css.append_css({'external_url': 'https://codepen.io/amyoshino/pen/jzXypZ.css
 
 # Define all variables here
 webpage_title = "Age Optimal Updates for Autonomous Driving"
+repository_name = "single-ring-road-with-light"
 
 # Set background color
 colors = {
@@ -123,22 +124,32 @@ app.layout = html.Div(style={'backgroundColor': colors["background"]}, children=
 				html.Br(),
 				html.Label(id="slider-text", style={"fontFamily": "HelveticaNeue", "fontWeight": "bold", 'fontSize': 20}),
 				html.Br(),
-				dcc.Slider(id="time-slider", min=0, max=vtp_data_dict["local10m"]["episode-length"]-1, step=1, value=600)
+				dcc.Slider(id="time-slider", min=0, max=vtp_data_dict["local10m"]["episode-length"]-1, step=1),
+				html.Label(children="Jump to step : (max = %d)"%(vtp_data_dict["local10m"]["episode-length"]), style={"fontFamily": "HelveticaNeue", "fontWeight": "bold", 'fontSize': 20}),
+				dcc.Input(id="set-time-slider", type="text", max=vtp_data_dict["local10m"]["episode-length"], debounce=True, min=0)
 
 			], className = "row"),
 
 		html.Div([
 
-
 			html.Div([
 
-				dcc.Graph(id="vtp-frames")
+				html.H2(children="RL Agent State Input", style={'text-align' : 'center', 'fontFamily': "Old Standard TT, serif", 'fontSize': 20, "margin-left": 140, "margin-top": 30}, className="six columns"),
+
+				html.Img(id="vtp-frames",
+					style={
+						"margin-top": 20,
+						"margin-left": 150,
+						"height": "auto",
+						"width": "auto",
+						"max-width": "1000px",
+					})
 
 				], className="six columns"),
 
 			html.Div([
 
-				dcc.Graph(id="vtp-agent-vel")
+				dcc.Graph(id="vtp-action-distribution")
 
 				], className="six columns", style={"fontFamily": "HelveticaNeue"})
 
@@ -155,7 +166,7 @@ app.layout = html.Div(style={'backgroundColor': colors["background"]}, children=
 
 			html.Div([
 
-				dcc.Graph(id="vtp-action-distribution")
+				dcc.Graph(id="vtp-agent-vel")
 
 				], className="six columns", style={"fontFamily": "HelveticaNeue"})
 
@@ -192,34 +203,51 @@ def update_vts_graphs(case, traffic_density, time_slider_value):
 
 		return figure
 
-@app.callback(Output('vtp-frames', 'figure'),
-	[Input('vtp-case-dropdown', 'value'), Input('vtp-density-dropdown', 'value')])
-def update_vts_graphs(case, traffic_density):
+@app.callback(Output('vtp-frames', 'src'),
+	[Input('vtp-case-dropdown', 'value'), Input('vtp-density-dropdown', 'value'), Input('time-slider', 'value')])
+def update_vts_graphs(case, traffic_density, time_slider_value):
 
-	'''
-	if case == "local10m":
-		imgPath = "https://raw.githubusercontent.com/mynkpl1998/single-ring-road-with-light/master/SingleLaneIDM/Common/localview10mtrs/Images/" + str(traffic_density) +"_0.png" + "?token=AOaRKSvAWOOSgNpYdjZnbGXAwmqTOghaks5cqesWwA%3D%3D"
-	elif case == "comm10m_reg2":
-		imgPath = comm10m_reg2_img_loc + str(traffic_density) + "_0.png"
-	elif case =="comm10m_reg4":
-		imgPath = comm10m_reg4_img_loc + str(traffic_density) + "_0.png"
-	'''
-	imgPath = "https://i.imgur.com/vaYjkdF.png"
-
-	layout = go.Layout(images=[dict(source=imgPath)])
-
-	img_width = 570/2
-	img_height = 500/2
-	scale_factor = 1.0
-
-	figure = fig = go.Figure(data=[{'x': [0, img_width*scale_factor], 'y': [0, img_height*scale_factor],  'mode': 'markers','marker': {'opacity': 0}}],layout = layout)
+	print(time_slider_value)
+	if case == None or traffic_density == None or time_slider_value == None:
+		pass
+	else:
+		if case == "local10m":
+			imgPath = "https://raw.githubusercontent.com/mynkpl1998/" + repository_name + "/master/SingleLaneIDM/Common/localview10mtrs/Images/" + str(traffic_density) + "_%d.png"%(time_slider_value)
+		elif case == "comm10m_reg2":
+			imgPath = "https://raw.githubusercontent.com/mynkpl1998/" + repository_name + "/master/SingleLaneIDM/Common/comm10m_reg2/Images/" + str(traffic_density) + "_%d.png"%(time_slider_value)
+		elif case =="comm10m_reg4":
+			imgPath = "https://raw.githubusercontent.com/mynkpl1998/" + repository_name + "/master/SingleLaneIDM/Common/comm10m_reg4/Images/" + str(traffic_density) + "_%d.png"%(time_slider_value)
 		
-	return figure
+		return imgPath
 
 @app.callback(Output('slider-text', 'children'),
 	[Input('time-slider', 'value')])
 def update_slider_text(slider_value):
-	return ["Current simulation time : %.1f seconds"%(vtp_data_dict["local10m"]["time-period"] * (slider_value + 1))]
+	if slider_value == None:
+		return ["Current simulation time : 0.0 seconds, steps : 0"]
+	else:
+		return ["Current simulation time : %.1f seconds, steps = %d"%(vtp_data_dict["local10m"]["time-period"] * (slider_value), (slider_value))]
+
+@app.callback(Output('set-time-slider', 'placeholder'),
+	[Input('time-slider', 'value')])
+def update_input_box_text(slider_value):
+	if slider_value == None:
+		pass
+	else:
+		box_text = str(slider_value)
+		return box_text
+
+@app.callback(Output('time-slider', 'value'),
+	[Input('set-time-slider', 'value')])
+def update_time_slider_value(set_time_slider_value):
+	if set_time_slider_value == None:
+		pass
+	else:
+		try:
+			return int(set_time_slider_value)
+		except:
+			return int(0)
+
 
 @app.callback(Output('vtp-cum-reward', 'figure'),
 	[Input('vtp-case-dropdown', 'value'), Input('vtp-density-dropdown', 'value'), Input('time-slider', 'value')])
@@ -260,6 +288,7 @@ def update_vts_action_dist(case, traffic_density, time_slider_value):
 
 	else:
 		distribution = vtp_data_dict[case]["data"][traffic_density][0]["probs"][time_slider_value]
+		print(distribution)
 		x_data = list(distribution.keys())
 		y_data = []
 		for element in x_data:
@@ -280,4 +309,5 @@ def update_vts_action_dist(case, traffic_density, time_slider_value):
 if __name__ == "__main__":
 
 	ADDRESS = "0.0.0.0"
-	app.run_server(debug=True, host=ADDRESS)
+	PORT = "8051"
+	app.run_server(debug=True, host=ADDRESS, port=PORT)
