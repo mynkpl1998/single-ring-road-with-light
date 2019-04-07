@@ -8,7 +8,7 @@ import yaml
 from gym.spaces import Discrete, Box
 from gym.envs.registration import EnvSpec
 import numpy as np
-from SingleLaneIDM.SimulatorCode.controllers import ApexRLController, ManualController, PPORLController
+from SingleLaneIDM.SimulatorCode.controllers import ApexRLController, ManualController, PPORLController, PPORLControllerWithActionProbs
 import argparse
 
 parser = argparse.ArgumentParser()

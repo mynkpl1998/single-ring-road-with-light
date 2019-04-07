@@ -2,7 +2,7 @@ import os, sys
 sys.path.append(os.getcwd() + "/")
 
 from SingleLaneIDM.SimulatorCode.main_env import Wrapper 
-from SingleLaneIDM.SimulatorCode.main_env import ManualController, ApexRLController, PPORLController
+from SingleLaneIDM.SimulatorCode.main_env import ManualController, ApexRLController, PPORLControllerWithActionProbs
 import matplotlib.pyplot as plt
 import argparse
 import numpy as np
@@ -35,7 +35,7 @@ if __name__ == "__main__":
 
 	global_data_dict = {}
 	densities = [0.2, 0.4, 0.5, 0.7]
-	#densities = [0.2]
+	#densities = [0.7]
 	
 	with open(args.sim_config_file, "r") as handle:
 		sim_config = yaml.load(handle)
@@ -57,7 +57,7 @@ if __name__ == "__main__":
 	exp_config[exp_name]["config"]["horizon"] == int(sim_config["config"]["horizon"])
 
 	env = Wrapper(sim_config)
-	controller = PPORLController(False, sim_config, exp_config, args.checkpoint_file)
+	controller = PPORLControllerWithActionProbs(False, sim_config, exp_config, args.checkpoint_file)
 
 	global_data_dict["num_episodes"] = num_episodes
 	global_data_dict["episode-length"] = episode_length
@@ -76,25 +76,34 @@ if __name__ == "__main__":
 			successful_episode = False
 
 			episode_data = {}
-			episode_data["cum_reward"] = 0.0
+			episode_data["reward"] = np.zeros(episode_length)
 			episode_data["agent_vel"] = np.zeros(episode_length)
 			episode_data["planner_actions"] = []
+			episode_data["probs"] = []
 
 			file_name = args.save_path + args.case_name + "/Images/" + str(env.env.num_cars_in_setup) + "_%d.png"%(0)
 			plt.imsave(file_name, env.env.curr_screen, )
 
 			for step in range(0, episode_length):
 
-				action = controller.getAction(prev_state)
+				action, probs = controller.getAction(prev_state)
 				next_state, reward, done, _ = env.step(action)
-
+				episode_reward += reward
+				
+				probs_dict = {}
+				
+				for act in env.env.plan_map_reverse.keys():
+					probs_dict[env.env.plan_map_reverse[act]] = probs[act]
+				
+				episode_data["probs"].append(probs_dict)
+				
 				episode_data["planner_actions"].append(env.env.plan_map_reverse[action])
 				agent_idx = [i for i, tup in enumerate(env.env.lane_map_list[env.env.agent_lane]) if tup[env.env.lab2ind["agent"]] == 1][0]
 				episode_data["agent_vel"][step] = env.env.lane_map_list[env.env.agent_lane][agent_idx][env.env.lab2ind["vel"]]
+				episode_data["reward"][step] = episode_reward
 				file_name = args.save_path + args.case_name + "/Images/" + str(env.env.num_cars_in_setup) + "_%d.png"%(env.env.num_steps)
 				plt.imsave(file_name, env.env.curr_screen, )
 
-				episode_reward += reward
 				prev_state = next_state
 
 				if done:
