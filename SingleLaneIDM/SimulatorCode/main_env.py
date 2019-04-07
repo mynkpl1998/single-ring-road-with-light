@@ -94,7 +94,7 @@ if __name__ == "__main__":
 		for step in range(0, horizon):
 
 			#action = controller.getAction(env.queue.queue[-1])
-			action = 0
+			action = 2
 			#action = controller.getAction(prev_state)
 			next_state, reward, done, info_dict = env.step(action)
 

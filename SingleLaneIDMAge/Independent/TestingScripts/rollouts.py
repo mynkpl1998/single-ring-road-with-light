@@ -19,6 +19,8 @@ sys.path.append(os.getcwd() + "/")
 from SingleLaneIDMAge.SimulatorCode.main_env import Wrapper
 from SingleLaneIDMAge.SimulatorCode.controllers import PPORLController
 from SingleLaneIDMAge.Independent.TrainingScripts.ppo_train import policy_mapper, gen_policy
+from ray.rllib.agents.ppo.ppo import PPOAgent
+
 import argparse
 
 
@@ -69,7 +71,25 @@ if __name__ == "__main__":
 	exp_config[exp_name]["config"]["multiagent"]["policy_graphs"] = policy_graphs
 	exp_config[exp_name]["config"]["multiagent"]["policy_mapping_fn"] = tune.function(policy_mapper)
 
-	controller = PPORLController(False, sim_config, exp_config, args.checkpoint_file)
+	#controller = PPORLController(False, sim_config, exp_config, args.checkpoint_file)
+
+	ray.init()
+	
+
+	agent = PPOAgent(env="tsim-v0", config={
+		"observation_filter": "NoFilter",
+		"multiagent": {
+			"policy_mapping_fn": policy_mapper,
+			"policy_graphs": {
+				"comm_policy": (PPOPolicyGraph, env.comm_observation_space, env.comm_action_space, {}),
+				"planner_policy": (PPOPolicyGraph, env.planner_observation_space, env.planner_action_space, {})
+			},
+			"policies_to_train": ["comm_policy", "planner_policy"]
+		}
+		})
+
+	agent.restore(args.checkpoint_file)
+	
 
 	episodes = args.num_episodes
 	horizon = args.episode_length
@@ -82,13 +102,16 @@ if __name__ == "__main__":
 
 		for step in range(0, horizon):
 
-			action = controller.getAction(prev_state)
+			action = {}
+			action["planner"] = agent.compute_action(prev_state["planner"], policy_id="planner_policy")
+			action["comm"] = agent.compute_action(prev_state["comm"], policy_id="comm_policy")
+
 			next_state, reward, done, done_dict = env.step(action)
 
-			episode_reward += reward
+			episode_reward += reward["planner"]
 			prev_state = next_state
 
-			if done:
+			if done["__all__"]:
 				break
 
 		print("Episode Lasted for %d time steps and accumulated %.2f Reward"%(step+1, episode_reward))

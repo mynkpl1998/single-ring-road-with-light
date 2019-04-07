@@ -6,6 +6,7 @@ config:
   external-controller: true
   time-period: 0.1
   trajec-file-path: None
+  enable-seed: false
   cell-size: 1
   view-size: 10
   fps: 60
@@ -21,6 +22,7 @@ config:
   reward-alpha: 1.0
   headway-thershold: 1 # second
   enable-traffic-light: true 
+  enable-frame-capture: true
   horizon: 5500 # steps
   tf-config:
     max-dur: 30 # in seconds

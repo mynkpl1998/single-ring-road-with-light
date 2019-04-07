@@ -1,1 +1,5 @@
-/home/mayank/ray_results/RingRoad-Single-LaneComm/PPO_tsim-v0_0_2019-04-01_15-47-12paqmpkzx
+Dir : /home/mayank/ray_results/RingRoad-Single-LaneComm/
+
+EXP:
+
+PPO_tsim-v0_0_2019-04-04_23-06-03__7_c_dp
