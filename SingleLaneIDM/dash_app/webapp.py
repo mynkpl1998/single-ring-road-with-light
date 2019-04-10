@@ -10,7 +10,6 @@ import copy
 def readPickle(fname):
 	with open(fname, "rb") as handle:
 		data = pickle.load(handle)
-
 	return copy.deepcopy(data)
 
 
@@ -27,6 +26,22 @@ vtp_data_dict = {}
 vtp_data_dict["local10m"] = readPickle(local10m_loc)
 vtp_data_dict["comm10m_reg2"] = readPickle(comm10m_reg2_loc)
 vtp_data_dict["comm10m_reg4"] = readPickle(comm10m_reg4_loc)
+
+# --------------- Read data for results section -------------------#
+local_view_res_datafile = "SingleLaneIDM/LocalView10m/Results/dataset.pkl"
+full_comm_res_datafile = "SingleLaneIDM/LocalView10Comm10/Results/dataset.pkl"
+restricted_comm_res_data_file = "SingleLaneIDM/LocalView10Comm10_regs_4/Results/dataset.pkl"
+res_data_dict = {}
+res_data_dict["res-local-view"] = readPickle(local_view_res_datafile)
+res_data_dict["res-full-comm"] = readPickle(full_comm_res_datafile)
+res_data_dict["res-restricted-comm"] = readPickle(restricted_comm_res_data_file)
+
+case_reverse_map = {}
+case_reverse_map["res-local-view"] = "Only Local View"
+case_reverse_map["res-full-comm"] = "Full access to Communication"
+case_reverse_map["res-restricted-comm"] = "Restricted access to Communication"
+
+# --------------- Read data for results section -------------------#
 
 # Create Traffic Density Dropdown list
 traffic_density_dropdown_list = []
@@ -61,7 +76,7 @@ app.layout = html.Div(style={'backgroundColor': colors["background"]}, children=
 			html.Div([
 
 					html.H1(style={'fontColor': 'blue', 'fontFamily': 'HelveticaNeue'}, children=webpage_title),
-					html.H6(children="Mayank K. Pal, Sanjit K. Kaul, Saket Anand", style={'fontFamily': 'HelveticaNeue'})
+					html.H6(children=[html.A("Mayank K. Pal", href="https://scholar.google.co.in/citations?user=ZVRzQ9AAAAAJ&hl=en"), html.A(", Sanjit K. Kaul", href="https://scholar.google.co.in/citations?user=XGNQPRsAAAAJ&hl=en"), html.A(", Saket Anand", href="https://scholar.google.co.in/citations?user=YmYvVEQAAAAJ&hl=en")], style={'fontFamily': 'HelveticaNeue'})
 				], className="eight columns"),
 
 			html.Div([
@@ -125,8 +140,8 @@ app.layout = html.Div(style={'backgroundColor': colors["background"]}, children=
 				html.Label(id="slider-text", style={"fontFamily": "HelveticaNeue", "fontWeight": "bold", 'fontSize': 20}),
 				html.Br(),
 				dcc.Slider(id="time-slider", min=0, max=vtp_data_dict["local10m"]["episode-length"]-1, step=1),
-				html.Label(children="Jump to step : (max = %d)"%(vtp_data_dict["local10m"]["episode-length"]), style={"fontFamily": "HelveticaNeue", "fontWeight": "bold", 'fontSize': 20}),
-				dcc.Input(id="set-time-slider", type="text", max=vtp_data_dict["local10m"]["episode-length"], debounce=True, min=0)
+				html.Label(children="Jump to step : (max = %d)"%(vtp_data_dict["local10m"]["episode-length"] - 1), style={"fontFamily": "HelveticaNeue", "fontWeight": "bold", 'fontSize': 20}),
+				dcc.Input(id="set-time-slider", type="text", max=vtp_data_dict["local10m"]["episode-length"] - 1, debounce=True, min=0)
 
 			], className = "row"),
 
@@ -170,12 +185,280 @@ app.layout = html.Div(style={'backgroundColor': colors["background"]}, children=
 
 				], className="six columns", style={"fontFamily": "HelveticaNeue"})
 
-			], className="row")
+			], className="row"),
 
 		# ---- Visualizing Policy Ends ---- #
 
+		html.Hr(),
+
+		html.Div([
+
+			html.Div([
+
+				html.H2(html.U("Results"), style={'fontFamily': 'HelveticaNeue', 'text-align': 'center'})
+
+				], className="row"),
+
+			html.Div([
+
+					html.Label(children="Check cases to analyze : ", style={"fontFamily": "HelveticaNeue", "fontWeight": "bold", 'fontSize': 20}),
+					html.Br(),
+					dcc.Checklist(id="res-checklist",
+    				options=[
+        					{'label': 'Only Local View', 'value': 'res-local-view'},
+        					{'label': 'Full access to Communication', 'value': 'res-full-comm'},
+        					{'label': 'Restricted access to Communication', 'value': 'res-restricted-comm'}
+    					],
+    					values=['res-local-view', 'res-full-comm'], style={"margin-left": 20, 'fontFamily': 'HelveticaNeue', 'fontSize': 20})
+
+				], className="row"),
+
+			html.Div([
+
+					html.Div([
+						dcc.Graph(id="res-avg-speed")
+					], className="six columns"),
+
+					html.Div([
+						dcc.Graph(id="res-avg-reward")
+					], className="six columns")
+
+				
+				], className="row"),
+
+			html.Br(),
+
+
+			html.Div([
+
+					html.Div([
+
+						dcc.Dropdown(id="plan-action-dropdown",
+							options= [
+								{"label": "Accelerate", "value": "acc"},
+								{"label": "Decelerate", "value": "dec"},
+								{"label" :"Do-Nothing (acc= 0)", "value": "do-nothing"}
+							],
+							placeholder = "Planning Action"
+							)
+
+						], className="five columns", style = {"fontFamily" : "HelveticaNeue", "fontWeight": "bold"}),
+
+					html.Div([
+
+						dcc.Dropdown(id="query-action-dropdown",
+							options= [
+								{"label": "Accelerate", "value": "acc"},
+								{"label": "Decelerate", "value": "dec"},
+								{"label" :"Do-Nothing (acc= 0)", "value": "don"}
+							],
+							value = ["acc"]
+
+							)
+
+						], className="five columns",)
+
+				], className="row"),
+
+			html.Div([
+
+					html.Div([
+						dcc.Graph(id="res-act-dist")
+					], className="five columns"),
+
+					html.Div([
+						dcc.Graph(id="res-reg-dist")
+					], className="five columns")
+
+				
+				], className="row")
+
+		], className="row")
+
+
 		], className = "ten columns offset-by-one")
 	)
+
+def cal_planner_percentage(data_dict):
+	num_episodes = data_dict["num_episodes"]
+	episode_length = data_dict["episode-length"]
+	
+	possible_actions = {'acc': 0, 'dec':1, 'do-nothing':2}
+	act_dist = {}
+	densities = []
+
+	for density in data_dict["data"].keys():
+
+		densities.append(density)
+
+		act_dist[density] = copy.deepcopy(possible_actions)
+
+		for episode_num in data_dict["data"][density]:
+			for step in range(0, episode_length):
+				act_dist[density][data_dict["data"][density][episode_num]["planner_actions"][step]] += 1
+
+	return densities, act_dist
+
+def avg_speed(data_dict):
+	global_vel_data = {}
+
+	for density in data_dict["data"].keys():
+	    
+	    vel_data = []
+	    
+	    for episode_num in data_dict["data"][density].keys():
+	            
+	            episode_data = []
+	            
+	            for step in range(0, len(data_dict["data"][density][episode_num]["agent_vel"])):
+	                episode_data.append(data_dict["data"][density][episode_num]["agent_vel"][step])
+	            
+	            vel_data.append(episode_data)
+	    
+	    global_vel_data[density] = copy.deepcopy(vel_data)
+
+
+
+	avg_speeds = []
+	densities = []
+
+	for density in global_vel_data.keys():
+	    densities.append(density)
+	    
+	    speed_sum = 0.0
+	    elements_count = 0
+	    for episode in global_vel_data[density]:
+	        for vel in episode:
+	            speed_sum += vel
+	            elements_count += 1
+	    
+	    avg_speeds.append((speed_sum/elements_count) * 3.6)
+
+	return densities, avg_speeds
+
+def avg_cum_reward(data_dict):
+	num_episodes = data_dict["num_episodes"]
+	episode_length = data_dict["episode-length"]
+	avg_rewards = []
+	densities = []
+
+	for density in data_dict["data"].keys():
+	    densities.append(density)
+	    
+	    cum_reward_sum = 0.0
+	    elements_count = 0
+	    
+	    for episode in data_dict["data"][density]:
+	        cum_reward_sum += data_dict["data"][density][episode]["cum_reward"]
+	    avg_rewards.append(cum_reward_sum/num_episodes)
+
+	return densities, avg_rewards
+
+@app.callback(Output('res-act-dist', 'figure'),
+	[Input('res-checklist', 'values'), Input('plan-action-dropdown', 'value')])
+def update_results_action_distribution(Checklist_val, planning_action_value):
+
+	#print(Checklist_val)
+	if len(Checklist_val) == 0 or planning_action_value == None:
+
+		figure = {
+			'data': [],
+			'layout': go.Layout(title = "Action Distribution", xaxis={'title': 'Traffic Density'}, yaxis = {'title': 'Percentage (%)'}, font={"family": "Old Standard TT, serif", 'size': 15})
+		}
+
+		return figure
+
+	else:
+		layout_data = []
+		for case in Checklist_val:
+			x_data, act_dict = cal_planner_percentage(res_data_dict[case])
+
+			y_data = []
+			for dens in act_dict:
+				y_data.append(act_dict[dens][planning_action_value])
+
+			act_trace = go.Bar(
+					y = y_data,
+					x = x_data,
+					name = case_reverse_map[case]
+				)
+
+			layout_data.append(act_trace)
+
+		figure = {
+			'data': layout_data,
+			'layout': go.Layout(title = "Action Distribution", xaxis={'title': 'Traffic Density'}, yaxis = {'title': 'Percentage (%)'}, font={"family": "Old Standard TT, serif", 'size': 15})
+		}
+
+		return figure
+
+			
+
+
+@app.callback(Output('res-avg-speed', 'figure'),
+	[Input('res-checklist', 'values')])
+def update_results_avg_speed(values):
+	if len(values) == 0:
+
+		figure = {
+			'data': [],
+			'layout': go.Layout(legend = {'orientation' : "h"}, title = "Average Agent Speed", yaxis = {'title': 'Speed (km/hr)'}, font={"family": "Old Standard TT, serif", 'size': 15})
+		}
+
+		return figure
+	else:
+		layout_data = []
+
+		for case in values:
+			x_data, y_data = avg_speed(res_data_dict[case])
+			#print(x_data)
+			vel_trace = go.Bar(
+					y = y_data,
+					x = x_data,
+					name = case_reverse_map[case]
+				)
+			layout_data.append(vel_trace)
+
+
+		figure = {
+			'data': layout_data,
+			'layout': go.Layout(legend = {'orientation' : "h"}, title = "Average Agent Speed", yaxis = {'title': 'Speed (km/hr)'}, font={"family": "Old Standard TT, serif", 'size': 15})
+		}
+
+		return figure
+
+
+@app.callback(Output('res-avg-reward', 'figure'),
+	[Input('res-checklist', 'values')])
+def update_results_rewards(values):
+	if len(values) == 0:
+
+		figure = {
+			'data': [],
+			'layout': go.Layout(legend = {'orientation' : "h"}, title = "Average Cumulative Reward", xaxis={'title': 'Traffic Density'}, yaxis = {'title': 'Cumulative Reward'}, font={"family": "Old Standard TT, serif", 'size': 15})
+		}
+
+		return figure
+	else:
+		layout_data = []
+
+		for case in values:
+			x_data, y_data = avg_cum_reward(res_data_dict[case])
+			#print(x_data)
+			vel_trace = go.Bar(
+					y = y_data,
+					x = x_data,
+					name = case_reverse_map[case]
+				)
+			layout_data.append(vel_trace)
+
+
+		figure = {
+			'data': layout_data,
+			'layout': go.Layout(legend = {'orientation' : "h"}, title = "Average Cumulative Reward", yaxis = {'title': 'Cumulative Reward'}, font={"family": "Old Standard TT, serif", 'size': 15})
+		}
+
+		return figure
 
 @app.callback(Output('vtp-agent-vel', 'figure'),
 	[Input('vtp-case-dropdown', 'value'), Input('vtp-density-dropdown', 'value'), Input('time-slider', 'value')])
@@ -207,7 +490,7 @@ def update_vts_graphs(case, traffic_density, time_slider_value):
 	[Input('vtp-case-dropdown', 'value'), Input('vtp-density-dropdown', 'value'), Input('time-slider', 'value')])
 def update_vts_graphs(case, traffic_density, time_slider_value):
 
-	print(time_slider_value)
+	#print(time_slider_value)
 	if case == None or traffic_density == None or time_slider_value == None:
 		pass
 	else:
@@ -288,7 +571,7 @@ def update_vts_action_dist(case, traffic_density, time_slider_value):
 
 	else:
 		distribution = vtp_data_dict[case]["data"][traffic_density][0]["probs"][time_slider_value]
-		print(distribution)
+		#print(distribution)
 		x_data = list(distribution.keys())
 		y_data = []
 		for element in x_data:

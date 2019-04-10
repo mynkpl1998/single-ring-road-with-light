@@ -23,6 +23,8 @@ config:
   headway-thershold: 1 # second
   enable-traffic-light: true
   enable-frame-capture: false
+  test-mode: false
+  test-file-path: None
   horizon: 5500 # steps
   tf-config:
     max-dur: 30 # in seconds

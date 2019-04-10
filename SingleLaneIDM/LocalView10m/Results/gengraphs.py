@@ -21,9 +21,10 @@ if __name__ == "__main__":
 	args = parser.parse_args()
 
 	trajec_path = "/SingleLaneIDM/SimulatorCode/micro.pkl"
+	test_trajec_path = "/SingleLaneIDM//SimulatorCode/tf_time_steps.pkl"
 
 	global_data_dict = {}
-	densities = [0.2, 0.4, 0.5, 0.7]
+	densities = [0.2, 0.3, 0.4, 0.5, 0.6, 0.7]
 	
 	with open(args.sim_config_file, "r") as handle:
 		sim_config = yaml.load(handle)
@@ -35,7 +36,9 @@ if __name__ == "__main__":
 
 	sim_config["config"]["trajec-file-path"] = os.getcwd() + trajec_path
 	sim_config["config"]["external-controller"] = True
-	sim_config["config"]["enable-traffic-light"] = True	
+	sim_config["config"]["enable-traffic-light"] = True
+	sim_config["config"]["test-mode"] = True
+	sim_config["config"]["test-file-path"] = os.getcwd() + test_trajec_path
 
 	num_episodes = args.num_episodes
 	episode_length = args.episode_length
@@ -52,21 +55,17 @@ if __name__ == "__main__":
 	global_data_dict["data"] = {}
 
 	for density in densities:
-
-
 		
 		density_data = {}
 
-		completed_episodes = 0
-		while completed_episodes < num_episodes:
+		for completed_episodes in range(0, num_episodes):
 			
 			prev_state = env.reset(density)
 			episode_reward = 0.0
-			successful_episode = False
-
+			
 			episode_data = {}
 			episode_data["cum_reward"] = 0.0
-			episode_data["agent_vel"] = np.zeros(episode_length)
+			episode_data["agent_vel"] = []
 			episode_data["planner_actions"] = []
 
 			for step in range(0, episode_length):
@@ -76,7 +75,7 @@ if __name__ == "__main__":
 
 				episode_data["planner_actions"].append(env.env.plan_map_reverse[action])
 				agent_idx = [i for i, tup in enumerate(env.env.lane_map_list[env.env.agent_lane]) if tup[env.env.lab2ind["agent"]] == 1][0]
-				episode_data["agent_vel"][step] = env.env.lane_map_list[env.env.agent_lane][agent_idx][env.env.lab2ind["vel"]]
+				episode_data["agent_vel"].append(env.env.lane_map_list[env.env.agent_lane][agent_idx][env.env.lab2ind["vel"]])
 				
 				episode_reward += reward
 				prev_state = next_state
@@ -84,13 +83,8 @@ if __name__ == "__main__":
 				if done:
 					break
 
-			if (step+1) == episode_length:
-				completed_episodes += 1
-				successful_episode = True
-
-			if successful_episode:
-				episode_data["cum_reward"] = episode_reward
-				density_data[completed_episodes-1] = episode_data
+			episode_data["cum_reward"] = episode_reward
+			density_data[completed_episodes] = episode_data
 
 			print("Working for %.1f, Completed Episodes %d/%d"%(density, completed_episodes, num_episodes), end="\r")
 

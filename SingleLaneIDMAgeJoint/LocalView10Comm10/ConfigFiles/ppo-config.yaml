@@ -1,0 +1,25 @@
+RingRoad-Single-LaneComm:
+  env: tsim-v0
+  run: PPO
+  checkpoint_freq: 50
+  restore: /home/mayank/ray_results/RingRoad-Single-LaneComm/PPO_tsim-v0_0_2019-04-04_23-06-03__7_c_dp/checkpoint_5600/checkpoint-5600
+  config:
+    gamma: 0.999
+    lambda: 0.95
+    kl_coeff: 1.0
+    num_sgd_iter: 20
+    lr: 0.003
+    vf_loss_coeff: 0.5
+    clip_param: 0.2
+    sgd_minibatch_size: 4096
+    train_batch_size: 45056
+    num_workers: 11
+    entropy_coeff: 0.01
+    num_gpus: 1
+    grad_clip: 0.5
+    horizon: None
+    batch_mode: truncate_episodes
+    callbacks:
+      on_episode_end: None
+    model:
+      use_lstm: false

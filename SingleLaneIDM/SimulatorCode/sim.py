@@ -71,6 +71,8 @@ class TrafficSim(gym.Env):
         self.headway_thershold = config["headway-thershold"]
         self.enable_traffic_light = config["enable-traffic-light"]
         self.horizon = config["horizon"]
+        self.test_mode = config["test-mode"]
+        self.test_mode_trajec_file = config["test-file-path"]
         self.config_file = config
         # print(config)
         if self.enable_traffic_light:
@@ -636,8 +638,12 @@ class TrafficSim(gym.Env):
         self.track_vel_list[0] = {}
 
         self.agent_lane = 0
-        loc = np.random.randint(0, len(self.lane_map_list[self.agent_lane]))
-        self.lane_map_list[self.agent_lane][loc][self.lab2ind['agent']] = 1
+        if not self.test_mode:
+            loc = np.random.randint(0, len(self.lane_map_list[self.agent_lane]))
+            self.lane_map_list[self.agent_lane][loc][self.lab2ind['agent']] = 1
+        else:
+            self.lane_map_list[self.agent_lane][0][self.lab2ind["agent"]] = 1
+
         self.agent_id = None
         self.num_cars_in_setup = len(self.lane_map_list[0])
 
@@ -659,10 +665,18 @@ class TrafficSim(gym.Env):
         # Set traffic Lights
         if self.enable_traffic_light:
             self.set_red_light = False
-            self.genObj.reset()
-            self.genPts = self.genObj.gen()
-            # print(self.genPts)
-            self.expanded_pts = self.expandPts(self.genPts)
+            if not self.test_mode:
+                self.genObj.reset()
+                self.genPts = self.genObj.gen()
+                # print(self.genPts)
+                self.expanded_pts = self.expandPts(self.genPts)
+            else:
+                with open(self.test_mode_trajec_file, "rb") as handle:
+                    self.expanded_pts = pickle.load(handle)
+            
+
+            #print(self.expanded_pts)
+
 
         if self.render:
             self.draw_graphics(0.0, None, None)

@@ -2,12 +2,13 @@ RingRoad-Single-LaneComm:
   env: tsim-v0
   run: PPO
   checkpoint_freq: 50
+  #restore: /home/mayank/ray_results/RingRoad-Single-LaneComm/PPO_tsim-v0_0_2019-04-05_15-25-53q6n5lj7f/checkpoint_7950/checkpoint-7950
   config:
     gamma: 0.999
     lambda: 0.95
     kl_coeff: 1.0
     num_sgd_iter: 20
-    lr: 0.003
+    lr: 0.01
     vf_loss_coeff: 0.5
     clip_param: 0.2
     sgd_minibatch_size: 4096

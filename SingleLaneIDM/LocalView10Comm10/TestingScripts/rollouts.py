@@ -36,6 +36,8 @@ if __name__ == "__main__":
 
 	sim_config["config"]["trajec-file-path"] = os.getcwd() + trajec_path
 	sim_config["config"]["external-controller"] = True
+	#sim_config["config"]["test-mode"] = True
+	#sim_config["config"]["test-file-path"] = os.getcwd() + test_trajec_path
 
 	exp_name = list(exp_config.keys())[0]
 	exp_config[exp_name]["config"]["horizon"] = int(sim_config["config"]["horizon"])
