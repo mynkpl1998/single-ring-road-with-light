@@ -1,0 +1,15 @@
+RingRoad-Single-Lane:
+  env: tsim-v0
+  run: APEX
+  checkpoint_freq: 50
+  config:
+    n_step: 20
+    num_gpus: 1
+    num_workers: 10
+    horizon: None
+    gamma: 0.999
+    lr: 0.001
+    train_batch_size: 1024
+    target_network_update_freq: 70000
+    callbacks:
+      on_episode_end: None

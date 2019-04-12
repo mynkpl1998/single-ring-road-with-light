@@ -1,0 +1,33 @@
+config:
+  render: true
+  render-grid: true
+  update-graphs: false
+  update-graphs-method: occ
+  external-controller: true
+  time-period: 0.1
+  trajec-file-path: None
+  enable-seed: false
+  cell-size: 1
+  view-size: 10
+  fps: 60
+  comm-mode: false
+  frac-cells: 0.5
+  region-width: 5
+  collision-cost: -100
+  use-vel: true
+  max-vel: 9
+  other-max-vel: 9
+  hist-size: 1
+  #acc-noise: false
+  reward-alpha: 1.0
+  headway-thershold: 1 # second
+  enable-traffic-light: true 
+  enable-frame-capture: true
+  test-mode: false
+  test-file-path: None
+  horizon: 5500 # steps
+  tf-config:
+    max-dur: 30 # in seconds
+    min-dur: 15 # in seconds
+    num-tries: 10
+    num-stops: 10

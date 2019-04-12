@@ -28,9 +28,9 @@ vtp_data_dict["comm10m_reg2"] = readPickle(comm10m_reg2_loc)
 vtp_data_dict["comm10m_reg4"] = readPickle(comm10m_reg4_loc)
 
 # --------------- Read data for results section -------------------#
-local_view_res_datafile = "SingleLaneIDM/LocalView10m/Results/dataset.pkl"
-full_comm_res_datafile = "SingleLaneIDM/LocalView10Comm10/Results/dataset.pkl"
-restricted_comm_res_data_file = "SingleLaneIDM/LocalView10Comm10_regs_4/Results/dataset.pkl"
+local_view_res_datafile = "SingleLaneIDM/OnlyLocalView/Results/dataset.pkl"
+full_comm_res_datafile = "SingleLaneIDM/CommFullAcess/Results/dataset.pkl"
+restricted_comm_res_data_file = "SingleLaneIDM/CommRestrictedAccess/Results/dataset.pkl"
 res_data_dict = {}
 res_data_dict["res-local-view"] = readPickle(local_view_res_datafile)
 res_data_dict["res-full-comm"] = readPickle(full_comm_res_datafile)
@@ -43,6 +43,14 @@ case_reverse_map["res-restricted-comm"] = "Restricted access to Communication"
 
 # --------------- Read data for results section -------------------#
 
+# ---------------- Cases Map ---------------------------#
+case_description = {}
+case_description["res-local-view"] = "In Local View Only case, Ego vehicle perception range is limited by the data which can be sensed locally using lidars and radars. We set 20 metres of local view (including both front and back) in our simulations. Agent is rewarded for moving. We found that learned policy never picks the speed beyond which it can't decelerate for a given deceleration rate, if a vehicle suddenly comes infront of it. Thus, limiting the maximum speed at which Ego vehcile can travel in free-space."
+case_description["res-full-comm"] = "In Local View with Full Access to Communication, Ego vehicle has access to a local view and can receive information of the regions apart from what is locally available over the network. We termed this communicable region as Extended View. We set 20 metres of Extended View (including both ahead and behind the ego vehicle) in simulations. Agent is rewarded for moving and a small reward is added whenever agent chooses not to query which discourages unnecessary communication. We found learned policy was able to pick much higher speed without colliding into other vehciles compared to only Local View. This is because, Communication extends the range of perception of the Ego vehcile which leads much higher driving utlities. In this case we assumed single query can fetch information of whole extended view."
+case_description["res-restricted-comm"] = "In Local View with Restricted Access to Communication, Ego vehcile has access to local view and can receive information of the regions apart from what is locally available over the network. However, Communication systems have fixed data rate which limits the amount of information which can be exchanged over the network. To simulate the same, extended view is divided into further smaller regions, which restricts the whole information of extended view to be exchanged in a single query. Agent is rewarded for moving and a small reward is added whenever agent chooses not to query which discourages unnecessary communication. We found agent learned to pick a speed much higher than what is allowed by local view and comparable to when agent has access to whole information of extended view. "
+# ---------------- Cases Map ---------------------------#
+
+
 # Create Traffic Density Dropdown list
 traffic_density_dropdown_list = []
 for density in vtp_data_dict["local10m"]["data"].keys():
@@ -54,8 +62,9 @@ for density in vtp_data_dict["local10m"]["data"].keys():
 
 app = dash.Dash(__name__)
 
+
 # Bootstrap CSS
-app.css.append_css({'external_url': 'https://codepen.io/amyoshino/pen/jzXypZ.css'})
+app.css.append_css({'external_url': 'https://codepen.io/mynkpl1998/pen/QPgaXw.css'})
 
 # Define all variables here
 webpage_title = "Age Optimal Updates for Autonomous Driving"
@@ -77,7 +86,7 @@ app.layout = html.Div(style={'backgroundColor': colors["background"]}, children=
 
 					html.H1(style={'fontColor': 'blue', 'fontFamily': 'HelveticaNeue'}, children=webpage_title),
 					html.H6(children=[html.A("Mayank K. Pal", href="https://scholar.google.co.in/citations?user=ZVRzQ9AAAAAJ&hl=en"), html.A(", Sanjit K. Kaul", href="https://scholar.google.co.in/citations?user=XGNQPRsAAAAJ&hl=en"), html.A(", Saket Anand", href="https://scholar.google.co.in/citations?user=YmYvVEQAAAAJ&hl=en")], style={'fontFamily': 'HelveticaNeue'})
-				], className="eight columns"),
+				], className="eight columns", style = {"margin-top": 20}),
 
 			html.Div([
 
@@ -87,7 +96,7 @@ app.layout = html.Div(style={'backgroundColor': colors["background"]}, children=
 						"width": "70%",
 						"float": "right",
 						"positive":  "relative",
-						"margin-top": 8
+						"margin-top": 20
 					})
 
 				], className="four columns")
@@ -195,21 +204,25 @@ app.layout = html.Div(style={'backgroundColor': colors["background"]}, children=
 
 			html.Div([
 
-				html.H2(html.U("Results"), style={'fontFamily': 'HelveticaNeue', 'text-align': 'center'})
+				html.H2(html.B("Results"), style={'fontFamily': 'HelveticaNeue', 'text-align': ''})
 
 				], className="row"),
 
 			html.Div([
 
-					html.Label(children="Check cases to analyze : ", style={"fontFamily": "HelveticaNeue", "fontWeight": "bold", 'fontSize': 20}),
-					html.Br(),
+					html.Label(children="Select case(s) : ", style={"fontFamily": "HelveticaNeue", "fontWeight": "bold", 'fontSize': 20}),
 					dcc.Checklist(id="res-checklist",
     				options=[
-        					{'label': 'Only Local View', 'value': 'res-local-view'},
-        					{'label': 'Full access to Communication', 'value': 'res-full-comm'},
-        					{'label': 'Restricted access to Communication', 'value': 'res-restricted-comm'}
+        					{'label': 'Only Local View  ', 'value': 'res-local-view'},
+        					{'label': 'Full access to Communication  ', 'value': 'res-full-comm'},
+        					{'label': 'Restricted access to Communication  ', 'value': 'res-restricted-comm'}
     					],
-    					values=['res-local-view', 'res-full-comm'], style={"margin-left": 20, 'fontFamily': 'HelveticaNeue', 'fontSize': 20})
+    					values=['res-local-view'], style={"margin-left": 20, 'fontFamily': 'HelveticaNeue', 'fontSize': 18,}, labelStyle= {'display': "inline-block"}),
+
+					html.Br(),
+					html.Label(children="Explanation : ", style={"fontFamily": "HelveticaNeue", "fontWeight": "bold", 'fontSize': 20}),
+					html.Label(id="case-explnation-block", style={"fontFamily": "HelveticaNeue", 'fontSize': 18}),
+
 
 				], className="row"),
 
@@ -353,6 +366,17 @@ def avg_cum_reward(data_dict):
 	    avg_rewards.append(cum_reward_sum/num_episodes)
 
 	return densities, avg_rewards
+
+@app.callback(Output('case-explnation-block', 'children'),
+	[Input('res-checklist', 'values')])
+def update_explanation_block(values):
+
+	if len(values) == 0:
+		return "Select a Case"
+	elif len(values) > 1:
+		return "Camparing Different Cases."
+	else:
+		return case_description[values[0]]
 
 @app.callback(Output('res-act-dist', 'figure'),
 	[Input('res-checklist', 'values'), Input('plan-action-dropdown', 'value')])
