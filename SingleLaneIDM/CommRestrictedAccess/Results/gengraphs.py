@@ -79,7 +79,7 @@ if __name__ == "__main__":
 				agent_idx = [i for i, tup in enumerate(env.env.lane_map_list[env.env.agent_lane]) if tup[env.env.lab2ind["agent"]] == 1][0]
 				episode_data["agent_vel"].append(env.env.lane_map_list[env.env.agent_lane][agent_idx][env.env.lab2ind["vel"]])
 				
-				episode_reward += reward
+				episode_reward += env.env.before_comm_reward
 				prev_state = next_state
 
 				if done:

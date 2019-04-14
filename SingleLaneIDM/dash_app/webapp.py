@@ -45,10 +45,75 @@ case_reverse_map["res-restricted-comm"] = "Restricted access to Communication"
 
 # ---------------- Cases Map ---------------------------#
 case_description = {}
-case_description["res-local-view"] = "In Local View Only case, Ego vehicle perception range is limited by the data which can be sensed locally using lidars and radars. We set 20 metres of local view (including both front and back) in our simulations. Agent is rewarded for moving. We found that learned policy never picks the speed beyond which it can't decelerate for a given deceleration rate, if a vehicle suddenly comes infront of it. Thus, limiting the maximum speed at which Ego vehcile can travel in free-space."
-case_description["res-full-comm"] = "In Local View with Full Access to Communication, Ego vehicle has access to a local view and can receive information of the regions apart from what is locally available over the network. We termed this communicable region as Extended View. We set 20 metres of Extended View (including both ahead and behind the ego vehicle) in simulations. Agent is rewarded for moving and a small reward is added whenever agent chooses not to query which discourages unnecessary communication. We found learned policy was able to pick much higher speed without colliding into other vehciles compared to only Local View. This is because, Communication extends the range of perception of the Ego vehcile which leads much higher driving utlities. In this case we assumed single query can fetch information of whole extended view."
-case_description["res-restricted-comm"] = "In Local View with Restricted Access to Communication, Ego vehcile has access to local view and can receive information of the regions apart from what is locally available over the network. However, Communication systems have fixed data rate which limits the amount of information which can be exchanged over the network. To simulate the same, extended view is divided into further smaller regions, which restricts the whole information of extended view to be exchanged in a single query. Agent is rewarded for moving and a small reward is added whenever agent chooses not to query which discourages unnecessary communication. We found agent learned to pick a speed much higher than what is allowed by local view and comparable to when agent has access to whole information of extended view. "
+case_description["res-local-view"] = "In Local View Only case, Ego vehicle perception range is limited by the data which can be sensed locally using lidars and radars. We set 20 metres of local view (including both front and back) in our simulations. Agent is rewarded for moving. We found that learned policy never picks the speed beyond which it can't decelerate for a given deceleration rate, if a vehicle suddenly comes infront of it. Thus, limiting the maximum speed at which Ego vehicle can travel in free-space."
+case_description["res-full-comm"] = "In Local View with Full Access to Communication, Ego vehicle has access to a local view and can receive information of the regions apart from what is locally available over the network. We termed this communicable region as Extended View. We set 20 metres of Extended View (including both ahead and behind the ego vehicle) in simulations. Agent is rewarded for moving and a small reward is added whenever agent chooses not to query which discourages unnecessary communication. We found learned policy was able to pick much higher speed without colliding into other vehicles compared to only Local View. This is because, Communication extends the range of perception of the Ego vehicle which leads much higher driving utlities. In this case we assumed single query can fetch information of whole extended view."
+case_description["res-restricted-comm"] = "In Local View with Restricted Access to Communication, Ego vehicle has access to local view and can receive information of the regions apart from what is locally available over the network. However, Communication systems have fixed data rate which limits the amount of information which can be exchanged over the network. To simulate the same, extended view is divided into further smaller regions, which restricts the whole information of extended view to be exchanged in a single query. Agent is rewarded for moving and a small reward is added whenever agent chooses not to query which discourages unnecessary communication. We found agent learned to pick a speed much higher than what is allowed by local view and comparable to when agent has access to whole information of extended view. "
 # ---------------- Cases Map ---------------------------#
+
+# ---------------- Img Map ---------------------------#
+img_map = {}
+img_map["res-local-view"] = "https://raw.githubusercontent.com/mynkpl1998/single-ring-road-with-light/master/SingleLaneIDM/dash_app/data/local_view.png"
+img_map["res-full-comm"] = "https://raw.githubusercontent.com/mynkpl1998/single-ring-road-with-light/master/SingleLaneIDM/dash_app/data/full_comm.png"
+img_map["res-restricted-comm"] = "https://raw.githubusercontent.com/mynkpl1998/single-ring-road-with-light/master/SingleLaneIDM/dash_app/data/restricted_comm.png"
+# ---------------- Img Map ---------------------------#
+
+# ---------------- Calculate Graph Data --------------------#
+def cal_avg_agent_speed(data_dict):
+	x_data = []
+	y_data = []
+
+	for density in data_dict["data"]:
+
+		x_data.append(density)
+
+		num_steps = 0
+		vel_sum = 0
+		for episode in data_dict["data"][density]:
+			for vel in data_dict["data"][density][episode]["agent_vel"]:
+				vel_sum += vel
+				num_steps += 1
+		y_data.append((vel_sum/num_steps) * 3.6) 
+	return (x_data, y_data)
+
+def cal_action_distribution(data_dict):
+	poss_act = {}
+	poss_act["acc"] = 0
+	poss_act["dec"] = 0
+	poss_act["do-nothing"] = 0
+
+	y_data = {}
+	x_data = []
+
+	for key in poss_act.keys():
+		y_data[key] = []
+
+	for density in data_dict["data"]:
+		x_data.append(density)
+
+		act_dis_count = copy.deepcopy(poss_act)
+		num_steps = 0
+
+		for episode in data_dict["data"][density]:
+			for act in data_dict["data"][density][episode]["planner_actions"]:
+				act_dis_count[act] += 1
+				num_steps += 1
+
+		for key in act_dis_count.keys():
+			act_dis_count[key] /= num_steps
+			y_data[key].append(act_dis_count[key])
+
+	return (x_data, y_data)
+
+agent_speed_dict = {}
+agent_speed_dict["res-local-view"] = cal_avg_agent_speed(res_data_dict["res-local-view"])
+agent_speed_dict["res-full-comm"] = cal_avg_agent_speed(res_data_dict["res-full-comm"])
+agent_speed_dict["res-restricted-comm"] = cal_avg_agent_speed(res_data_dict["res-restricted-comm"])
+agent_act_dis_dict = {}
+agent_act_dis_dict["res-local-view"] = cal_action_distribution(res_data_dict["res-local-view"])
+agent_act_dis_dict["res-full-comm"] = cal_action_distribution(res_data_dict["res-full-comm"])
+agent_act_dis_dict["res-restricted-comm"] = cal_action_distribution(res_data_dict["res-restricted-comm"])
+
+# ---------------- Calculate Graph Data --------------------#
 
 
 # Create Traffic Density Dropdown list
@@ -222,6 +287,9 @@ app.layout = html.Div(style={'backgroundColor': colors["background"]}, children=
 					html.Br(),
 					html.Label(children="Explanation : ", style={"fontFamily": "HelveticaNeue", "fontWeight": "bold", 'fontSize': 20}),
 					html.Label(id="case-explnation-block", style={"fontFamily": "HelveticaNeue", 'fontSize': 18}),
+					html.Br(),
+					html.Img(id="res-case-src",
+					style={'display': 'block', 'margin-left': 'auto', 'margin-right': 'auto', 'width': '70%'})
 
 
 				], className="row"),
@@ -239,23 +307,21 @@ app.layout = html.Div(style={'backgroundColor': colors["background"]}, children=
 				
 				], className="row"),
 
-			html.Br(),
-
 
 			html.Div([
 
 					html.Div([
 
-						dcc.Dropdown(id="plan-action-dropdown",
+						dcc.Dropdown(id="case-selection-planner-action-dropdown",
 							options= [
-								{"label": "Accelerate", "value": "acc"},
-								{"label": "Decelerate", "value": "dec"},
-								{"label" :"Do-Nothing (acc= 0)", "value": "do-nothing"}
+								{"label": "Only Local View", "value": "res-local-view"},
+								{"label": "Full access to Communication", "value": "res-full-comm"},
+								{"label" :"Restricted access to Communication", "value": "res-restricted-comm"}
 							],
-							placeholder = "Planning Action"
+							placeholder = "Select a Case", 
 							)
 
-						], className="five columns", style = {"fontFamily" : "HelveticaNeue", "fontWeight": "bold"}),
+						], className="six columns", style = {"fontFamily" : "HelveticaNeue", "fontWeight": "bold"}),
 
 					html.Div([
 
@@ -269,7 +335,7 @@ app.layout = html.Div(style={'backgroundColor': colors["background"]}, children=
 
 							)
 
-						], className="five columns",)
+						], className="six columns",)
 
 				], className="row"),
 
@@ -277,11 +343,11 @@ app.layout = html.Div(style={'backgroundColor': colors["background"]}, children=
 
 					html.Div([
 						dcc.Graph(id="res-act-dist")
-					], className="five columns"),
+					], className="six columns"),
 
 					html.Div([
 						dcc.Graph(id="res-reg-dist")
-					], className="five columns")
+					], className="six columns")
 
 				
 				], className="row")
@@ -291,63 +357,6 @@ app.layout = html.Div(style={'backgroundColor': colors["background"]}, children=
 
 		], className = "ten columns offset-by-one")
 	)
-
-def cal_planner_percentage(data_dict):
-	num_episodes = data_dict["num_episodes"]
-	episode_length = data_dict["episode-length"]
-	
-	possible_actions = {'acc': 0, 'dec':1, 'do-nothing':2}
-	act_dist = {}
-	densities = []
-
-	for density in data_dict["data"].keys():
-
-		densities.append(density)
-
-		act_dist[density] = copy.deepcopy(possible_actions)
-
-		for episode_num in data_dict["data"][density]:
-			for step in range(0, episode_length):
-				act_dist[density][data_dict["data"][density][episode_num]["planner_actions"][step]] += 1
-
-	return densities, act_dist
-
-def avg_speed(data_dict):
-	global_vel_data = {}
-
-	for density in data_dict["data"].keys():
-	    
-	    vel_data = []
-	    
-	    for episode_num in data_dict["data"][density].keys():
-	            
-	            episode_data = []
-	            
-	            for step in range(0, len(data_dict["data"][density][episode_num]["agent_vel"])):
-	                episode_data.append(data_dict["data"][density][episode_num]["agent_vel"][step])
-	            
-	            vel_data.append(episode_data)
-	    
-	    global_vel_data[density] = copy.deepcopy(vel_data)
-
-
-
-	avg_speeds = []
-	densities = []
-
-	for density in global_vel_data.keys():
-	    densities.append(density)
-	    
-	    speed_sum = 0.0
-	    elements_count = 0
-	    for episode in global_vel_data[density]:
-	        for vel in episode:
-	            speed_sum += vel
-	            elements_count += 1
-	    
-	    avg_speeds.append((speed_sum/elements_count) * 3.6)
-
-	return densities, avg_speeds
 
 def avg_cum_reward(data_dict):
 	num_episodes = data_dict["num_episodes"]
@@ -378,47 +387,49 @@ def update_explanation_block(values):
 	else:
 		return case_description[values[0]]
 
+@app.callback(Output('res-case-src', 'src'),
+	[Input('res-checklist', 'values')])
+def update_res_image(values):
+
+	if len(values) == 0:
+		return None
+	elif len(values) > 1:
+		return None
+	else:
+		return img_map[values[0]]
+
 @app.callback(Output('res-act-dist', 'figure'),
-	[Input('res-checklist', 'values'), Input('plan-action-dropdown', 'value')])
-def update_results_action_distribution(Checklist_val, planning_action_value):
+	[Input('case-selection-planner-action-dropdown', 'value')])
+def update_results_action_distribution(case_value):
 
 	#print(Checklist_val)
-	if len(Checklist_val) == 0 or planning_action_value == None:
+	if case_value == None:
 
 		figure = {
 			'data': [],
-			'layout': go.Layout(title = "Action Distribution", xaxis={'title': 'Traffic Density'}, yaxis = {'title': 'Percentage (%)'}, font={"family": "Old Standard TT, serif", 'size': 15})
+			'layout': go.Layout(legend = {'orientation' : "h"}, title = "Action Distribution", xaxis={'title': 'Traffic Density'}, yaxis = {'title': 'Percentage (%)'}, font={"family": "Old Standard TT, serif", 'size': 15})
 		}
 
 		return figure
 
 	else:
+		
+		x, y_dist = agent_act_dis_dict[case_value]
 		layout_data = []
-		for case in Checklist_val:
-			x_data, act_dict = cal_planner_percentage(res_data_dict[case])
 
-			y_data = []
-			for dens in act_dict:
-				y_data.append(act_dict[dens][planning_action_value])
-
-			act_trace = go.Bar(
-					y = y_data,
-					x = x_data,
-					name = case_reverse_map[case]
-				)
-
+		for key in y_dist.keys():
+			x_data, y_data = x, y_dist[key]
+			act_trace = go.Bar(y = y_data, x = x_data, name = key)
 			layout_data.append(act_trace)
 
 		figure = {
 			'data': layout_data,
-			'layout': go.Layout(title = "Action Distribution", xaxis={'title': 'Traffic Density'}, yaxis = {'title': 'Percentage (%)'}, font={"family": "Old Standard TT, serif", 'size': 15})
+			'layout': go.Layout(legend = {'orientation' : "h"}, title = "Action Distribution", yaxis = {'title': 'Percentage (%)'}, font={"family": "Old Standard TT, serif", 'size': 15})
 		}
 
 		return figure
 
 			
-
-
 @app.callback(Output('res-avg-speed', 'figure'),
 	[Input('res-checklist', 'values')])
 def update_results_avg_speed(values):
@@ -426,7 +437,7 @@ def update_results_avg_speed(values):
 
 		figure = {
 			'data': [],
-			'layout': go.Layout(legend = {'orientation' : "h"}, title = "Average Agent Speed", yaxis = {'title': 'Speed (km/hr)'}, font={"family": "Old Standard TT, serif", 'size': 15})
+			'layout': go.Layout(legend = {'orientation' : "h"}, title = "Mean Agent Speed", yaxis = {'title': 'Speed (km/hr)'}, font={"family": "Old Standard TT, serif", 'size': 15})
 		}
 
 		return figure
@@ -434,7 +445,7 @@ def update_results_avg_speed(values):
 		layout_data = []
 
 		for case in values:
-			x_data, y_data = avg_speed(res_data_dict[case])
+			x_data, y_data = agent_speed_dict[case]
 			#print(x_data)
 			vel_trace = go.Bar(
 					y = y_data,
@@ -446,7 +457,7 @@ def update_results_avg_speed(values):
 
 		figure = {
 			'data': layout_data,
-			'layout': go.Layout(legend = {'orientation' : "h"}, title = "Average Agent Speed", yaxis = {'title': 'Speed (km/hr)'}, font={"family": "Old Standard TT, serif", 'size': 15})
+			'layout': go.Layout(legend = {'orientation' : "h"}, title = "Mean Agent Speed", yaxis = {'title': 'Speed (km/hr)'}, font={"family": "Old Standard TT, serif", 'size': 15})
 		}
 
 		return figure
@@ -459,7 +470,7 @@ def update_results_rewards(values):
 
 		figure = {
 			'data': [],
-			'layout': go.Layout(legend = {'orientation' : "h"}, title = "Average Cumulative Reward", xaxis={'title': 'Traffic Density'}, yaxis = {'title': 'Cumulative Reward'}, font={"family": "Old Standard TT, serif", 'size': 15})
+			'layout': go.Layout(legend = {'orientation' : "h"}, title = "Mean Cumulative Reward", xaxis={'title': 'Traffic Density'}, yaxis = {'title': 'Cumulative Reward'}, font={"family": "Old Standard TT, serif", 'size': 15})
 		}
 
 		return figure
@@ -479,7 +490,7 @@ def update_results_rewards(values):
 
 		figure = {
 			'data': layout_data,
-			'layout': go.Layout(legend = {'orientation' : "h"}, title = "Average Cumulative Reward", yaxis = {'title': 'Cumulative Reward'}, font={"family": "Old Standard TT, serif", 'size': 15})
+			'layout': go.Layout(legend = {'orientation' : "h"}, title = "Mean Cumulative Reward", yaxis = {'title': 'Cumulative Reward'}, font={"family": "Old Standard TT, serif", 'size': 15})
 		}
 
 		return figure
@@ -505,7 +516,7 @@ def update_vts_graphs(case, traffic_density, time_slider_value):
 
 		figure = {
 			'data': [agent_vel_trace],
-			'layout': go.Layout(title = "Instantenous Agent Speed",xaxis = {'title':'Time Step, Time Period = %.1fs'%(vtp_data_dict["local10m"]["time-period"])}, yaxis = {'title':"Agent Speed (km/hr)"}, font={"family": "Old Standard TT, serif", 'size': 15})
+			'layout': go.Layout(title = "Instantenous Agent Speed",xaxis = { 'title':'Time Step, Time Period = %.1fs'%(vtp_data_dict["local10m"]["time-period"])}, yaxis = {'title':"Agent Speed (km/hr)"}, font={"family": "Old Standard TT, serif", 'size': 15})
 		}
 
 		return figure

@@ -1485,6 +1485,8 @@ class TrafficSim(gym.Env):
             self.lane_map_list[0], key=lambda x: x[self.lab2ind['angle']])
         reward = self.calculate_reward()
 
+        self.before_comm_reward = reward
+
         if self.comm_mode:
             if (query == "NULL"):
                 reward += 0.1

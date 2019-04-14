@@ -8,11 +8,8 @@ import yaml
 from gym.spaces import Discrete, Box
 from gym.envs.registration import EnvSpec
 import numpy as np
-from SingleLaneIDMAge.SimulatorCode.controllers import ApexRLController, ManualController, PPORLController
-from ray.rllib.env.multi_agent_env import MultiAgentEnv
+from SingleLaneIDMAge.SimulatorCode.controllers import ApexRLController, ManualController, PPORLController, PPORLControllerWithActionProbs
 import argparse
-import time
-
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--episode-length", type=int, default=1000, help="max lenght of the episode")
@@ -22,7 +19,7 @@ parser.add_argument("--render", default=1, type=int, help="render simulation scr
 parser.add_argument("--config-file", type=str, help="simulation config-file")
 parser.add_argument("--idm-only", type=int, default=1, help="Enable only Human Drivers")
 
-class Wrapper(MultiAgentEnv):
+class Wrapper(gym.Env):
 
 	def __init__(self, config):
 		self.config_file = config
@@ -30,57 +27,34 @@ class Wrapper(MultiAgentEnv):
 		
 		# Initialize the objects here
 		self.env = TrafficSim(self.config_file["config"])
-		self.planner_action_space = self.env.planner_action_space
-		self.comm_action_space = self.env.comm_action_space
-		
-		# Observation Space
-		self.planner_observation_space = Box(-float("inf"), float("inf"), shape=(self.hist_size * self.env.planner_observation_space.shape[0],), dtype=np.float)
-		self.comm_observation_space = Box(-float("inf"), float("inf"), shape=(self.hist_size * self.env.comm_observation_space.shape[0],), dtype=np.float)
-
-		self.planner_obs_size = self.env.planner_observation_space.shape[0]
-		self.comm_obs_size = self.env.comm_observation_space.shape[0]
-
-		self.planner_queue = ObsQueue(self.hist_size, self.env.planner_observation_space.shape[0])
-		self.comm_queue = ObsQueue(self.hist_size, self.env.comm_observation_space.shape[0])
-
-		self.planner_queue.resetQueue()
-		self.comm_queue.resetQueue()
+		self.action_space = self.env.action_space
+		self.observation_space = Box(-float("inf"), float("inf"), shape=(self.hist_size * self.env.observation_space.shape[0],), dtype=np.float)
+		self.obs_size = self.env.observation_space.shape[0]
+		self.queue = ObsQueue(self.hist_size, self.env.observation_space.shape[0])
+		self.queue.resetQueue()
 
 	def reset(self, density=None):
+		self.queue.resetQueue()
+		obs = self.env.reset(density)
+		self.queue.addObs(obs.copy())
 
-		self.planner_queue.resetQueue()
-		self.comm_queue.resetQueue()
-
-		curr_obs = self.env.reset(density)
-		self.planner_queue.addObs(curr_obs["planner"].copy())
-		self.comm_queue.addObs(curr_obs["comm"].copy())
-
-		obs = {}
-		obs["planner"] = self.planner_queue.getObs()
-		obs["comm"] = self.comm_queue.getObs()
-
-		return obs
+		return self.queue.getObs()
 
 
 	def step(self, action):
-
-		obs, reward, dones, info = self.env.step(action)
 		
-		self.planner_queue.addObs(obs["planner"].copy())
-		self.comm_queue.addObs(obs["comm"].copy())
+		obs, reward, game_over, _ = self.env.step(action)
+		self.queue.addObs(obs.copy())
 
-		new_obs = {}
-		new_obs["planner"] = self.planner_queue.getObs()
-		new_obs["comm"] = self.comm_queue.getObs()
+		return (self.queue.getObs(), reward, game_over, {})
 
-		return new_obs, reward, dones, info
 
 
 if __name__ == "__main__":
 
 	args = parser.parse_args()
 	
-	trajec_path = "/SingleLaneIDM/SimulatorCode/micro.pkl"
+	trajec_path = "/SingleLaneIDMAge/SimulatorCode/micro.pkl"
 
 	sim_config_file_path = args.config_file
 
@@ -101,15 +75,11 @@ if __name__ == "__main__":
 
 
 	env = Wrapper(sim_config)
+	controller = ManualController(env)
 	#controller = RLController(render=False)
-	
-	print("Observation Spaces : ")
-	print("PLAN : ", env.planner_observation_space)
-	print("COMM : ", env.comm_observation_space)
-
-	print("Action Spaces : ")
-	print("PLAN : ", env.planner_action_space)
-	print("COMM : ", env.comm_action_space)
+	print(env.observation_space)
+	print(env.action_space)
+	print(env.env.action_map)
 
 	epsiodes = args.num_episodes
 	horizon = args.episode_length
@@ -118,25 +88,23 @@ if __name__ == "__main__":
 	for  epsiode in range(0, epsiodes):
 
 		prev_state = env.reset(args.density)
-		#print(prev_state)
 
 		episode_reward = 0.0
 
+		#print(prev_state)
+
 		for step in range(0, horizon):
 
-			act = {}
-			act["comm"] = np.random.randint(0, env.comm_action_space.n)
-			act["planner"] = np.random.randint(0, env.planner_action_space.n)
+			#action = controller.getAction(env.queue.queue[-1])
+			action = 2
+			#action = controller.getAction(prev_state)
+			next_state, reward, done, info_dict = env.step(action)
+			#print(next_state)
+			episode_reward += reward
+			prev_state = next_state
 
-			obs, rew, done, info = env.step(act)
-			vehicles = env.env.lane_map_list[0]
-
-			vec = []
-			for vehicle in vehicles:
-				vec.append(vehicle[env.env.lab2ind["vel"]])
-			print("Step : ", step+1, vec)
-			
-			if done["__all__"]:
+			if done:
 				break
 
 		print("Episode Lasted for %d time steps and accumulated %.2f Reward"%(step+1, episode_reward))
+		print("Time Elapsed : %.2f"%(env.env.time_elapsed))

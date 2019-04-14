@@ -22,6 +22,7 @@ if __name__ == "__main__":
 	args = parser.parse_args()
 	
 	trajec_path = "/SingleLaneIDM/SimulatorCode/micro.pkl"
+	test_trajec_path = "/SingleLaneIDM//SimulatorCode/tf_time_steps.pkl"
 
 	with open(args.sim_config_file, "r") as handle:
 		sim_config = yaml.load(handle)
@@ -36,6 +37,9 @@ if __name__ == "__main__":
 
 	sim_config["config"]["trajec-file-path"] = os.getcwd() + trajec_path
 	sim_config["config"]["external-controller"] = True
+	sim_config["config"]["test-mode"] = True
+	sim_config["config"]["test-file-path"] = os.getcwd() + test_trajec_path
+	sim_config["config"]["enable-traffic-light"] = False
 
 	exp_name = list(exp_config.keys())[0]
 	exp_config[exp_name]["config"]["horizon"] = int(sim_config["config"]["horizon"])

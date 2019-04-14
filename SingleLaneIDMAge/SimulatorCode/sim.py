@@ -1,25 +1,27 @@
-import os, sys
+from SingleLaneIDMAge.SimulatorCode.tfLight import RandomIntervalGenerator
+import random
+from gym.envs.registration import EnvSpec
+from gym.spaces import Discrete, Box
+import gym
+import yaml
+from collections import deque
+import math
+import copy
+import sys
+import pickle
+import time
+import pylab
+import pygame
+import matplotlib.patches as mpatches
+import matplotlib.backends.backend_agg as agg
+import matplotlib
+import numpy as np
+import os
+import sys
+import cv2
 sys.path.append(os.getcwd() + "/")
 
-import numpy as np
-import matplotlib
 matplotlib.use("Agg")
-import matplotlib.backends.backend_agg as agg
-import matplotlib.patches as mpatches
-import pygame
-import pylab
-import time
-import pickle
-import sys
-import copy
-import math
-from collections import deque
-import yaml
-import gym
-from gym.spaces import Discrete, Box
-from gym.envs.registration import EnvSpec
-import random
-from SingleLaneIDMAge.SimulatorCode.tfLight import RandomIntervalGenerator
 
 # Action Maping
 # action 0 - Accelerate
@@ -27,10 +29,17 @@ from SingleLaneIDMAge.SimulatorCode.tfLight import RandomIntervalGenerator
 # action 2 - Do Nothing
 
 
-class TrafficSim():
+class TrafficSim(gym.Env):
 
     def __init__(self, config):
+
+        self.enable_seed = config["enable-seed"]
+        if self.enable_seed:
+            np.random.seed(1)
+            random.seed(1)
+
         self.render = config["render"]
+        self.enable_frame_capture = config["enable-frame-capture"]
         self.time_period = config["time-period"]
         self.time_elapsed = 0.0
         self.trajec_file = config["trajec-file-path"]
@@ -44,38 +53,43 @@ class TrafficSim():
         self.car_length = 2*self.car_radius  # in m
         self.min_car_distance = 2  # in m
         self.x_pixel_one_metre = 6
-        self.delta_theta = [np.rad2deg( ((self.car_length + self.min_car_distance) * self.x_pixel_one_metre) / self.lane_radius[0])]
+        self.delta_theta = [np.rad2deg(
+            ((self.car_length + self.min_car_distance) * self.x_pixel_one_metre) / self.lane_radius[0])]
         self.render_grid = config["render-grid"]
         self.cell_size = config["cell-size"]
         self.view_size = config["view-size"]
         self.polygon_points = 10
-        # Comm is always enabled in Age Simulations
+        #self.comm_mode = config["comm-mode"]
         self.comm_mode = True
         self.frac_cells = config["frac-cells"]
         self.regions_width = config["region-width"]
         self.update_graphs = config["update-graphs"]
         self.update_graphs_method = config["update-graphs-method"]
-        self.share_planner_reward_with_comm = config["share-planner-reward-with-comm"]
+        self.collision_cost = config["collision-cost"]
         self.reward_alpha = config["reward-alpha"]
         #self.acc_noise = config["acc-noise"]
         self.external_controller = config["external-controller"]
         self.headway_thershold = config["headway-thershold"]
         self.enable_traffic_light = config["enable-traffic-light"]
-        self.planner_gets_age = config["planner-gets-age"]
         self.horizon = config["horizon"]
+        self.test_mode = config["test-mode"]
+        self.test_mode_trajec_file = config["test-file-path"]
         self.config_file = config
-        #print(config)
+        # print(config)
         if self.enable_traffic_light:
             self.readTFConfig()
-            self.genObj = RandomIntervalGenerator(int(self.min_duration / self.time_period), int(self.max_duration/self.time_period), self.num_stops, 1, self.horizon, self.num_tries)
+            self.genObj = RandomIntervalGenerator(int(self.min_duration / self.time_period), int(
+                self.max_duration/self.time_period), self.num_stops, 1, self.horizon, self.num_tries)
 
         self.findLocalview()
-        print("Local View for cars : ",self.localView_in_m)
+        print("Local View for cars : ", self.localView_in_m)
 
-        self.view_size_theta = [np.rad2deg((self.view_size*self.x_pixel_one_metre)/self.lane_radius[0])]
+        self.view_size_theta = [np.rad2deg(
+            (self.view_size*self.x_pixel_one_metre)/self.lane_radius[0])]
 
         if self.update_graphs_method not in ["vel", "occ"]:
-            print("Invalid update graphs method : %s"%(self.update_graphs_method))
+            print("Invalid update graphs method : %s" %
+                  (self.update_graphs_method))
             sys.exit(-1)
 
         self.densities = [0.2, 0.3, 0.4, 0.5, 0.6, 0.7]
@@ -89,19 +103,13 @@ class TrafficSim():
         self.occ_grid = np.zeros((1, self.num_cols), dtype=np.int32)
         self.vel_grid = np.zeros((1, self.num_cols), dtype=np.float32)
 
-        #print(self.num_cols)
-
-        #local_view_cols = int(2 * (self.localView_in_m / self.cell_size))
-        extended_view_cols = int(2 * ((self.view_size - self.localView_in_m) / self.cell_size))
-        self.max_age_value = 2 * extended_view_cols
+        self.extended_view_cols = int(2 * ((self.view_size - self.localView_in_m) / self.cell_size))
+        self.max_age_value = 2 * self.extended_view_cols
         self.age_time_step = self.time_period / self.max_age_value
 
-        if self.planner_gets_age:
-            self.planner_observation_space = Box(-float("inf"), float("inf"), shape=((2 * self.num_cols) + extended_view_cols, ), dtype=np.float)
-        else:
-            self.planner_observation_space = Box(-float("inf"), float("inf"), shape=(2 * self.num_cols, ), dtype=np.float)
-        self.comm_observation_space = Box(-float("inf"), float("inf"), shape=(extended_view_cols,), dtype=np.float)
-
+        # print(self.num_cols)
+        self.observation_space = Box(-float("inf"), float("inf"),
+                                     shape=((2 * self.num_cols) + self.extended_view_cols, ), dtype=np.float)
         self.region_maping = {}
 
         if (self.comm_mode):
@@ -130,16 +138,16 @@ class TrafficSim():
                         start, start+self.regions_width-1, num=self.regions_width, dtype='int'))
                     start = start + self.regions_width
 
-        #print(self.region_maping)
+        # print(self.region_maping)
         # ---- IDM Parameters ---- #
         self.a = 0.73
         self.b = 1.67
-        
+
         if config["use-vel"]:
             max_vel = config["max-vel"]
         else:
             max_vel = self.cal_vel(self.b, self.view_size)
-        
+
         self.v_not = max_vel
         self.max_vel = max_vel
         self.other_max_vel = config["other-max-vel"]
@@ -150,7 +158,8 @@ class TrafficSim():
         self.bsafe = 4*self.b
 
         # ----- ACTION MAP ----- #
-        self.action_map = {0: "Accelerate", 1: "Decelerate", 2: "Do Nothing", None: "None"}
+        self.action_map = {0: "Accelerate",
+                           1: "Decelerate", 2: "Do Nothing", None: "None"}
 
         # ------ PYGAME VARIABLES ------ #
 
@@ -162,11 +171,11 @@ class TrafficSim():
         self.fps = config["fps"]
         self.lane_map = {}
 
-        self.lab2ind = {'angle': 0, 'vel': 1, 'lane':2 , 'agent':3, "id": 4}
+        self.lab2ind = {'angle': 0, 'vel': 1, 'lane': 2, 'agent': 3, "id": 4}
 
         self.init_action_decoder()
         self.local_indexes = self.findLocalViewIndex()
-        #self.init_randomize_cars()
+        # self.init_randomize_cars()
 
         if self.render:
             self.init_render()
@@ -192,58 +201,51 @@ class TrafficSim():
 
         return raw_data, canvas.get_width_height()
 
-    def  init_action_decoder(self):
+    def init_action_decoder(self):
 
-        self.plan_map = {"acc": 0, "dec":1, "do-nothing": 2}
-        self.plan_map_reverse = {0: "acc", 1:"dec", 2:"do-nothing"}
-        
+        isEmpty = bool(self.region_maping)
+        self.plan_map = {"acc": 0, "dec": 1, "do-nothing": 2}
+        self.plan_map_reverse = {0: "acc", 1: "dec", 2: "do-nothing"}
+
         self.action_map = {}
 
-        possible_query = []
+        if isEmpty == False:
+            self.action_map[0] = "acc"
+            self.action_map[1] = "dec"
+            self.action_map[2] = "do-nothing"
+        else:
+            possible_query = []
 
-        [possible_query.append(query) for query in self.region_maping.keys()]
-        possible_query.append("NULL")
+            [possible_query.append(query)
+             for query in self.region_maping.keys()]
+            possible_query.append("NULL")
 
-        possible_plan = ["acc", "dec", "do-nothing"]
-        
-        count = 0
-        for plan in possible_plan:
-            for query in possible_query:
-                self.action_map[count] = str(plan)+"&"+str(query)
-                count += 1
+            possible_plan = ["acc", "dec", "do-nothing"]
 
-        self.comm_map_reverse = {}
-        count = 0
-        for reg in possible_query:
-            self.comm_map_reverse[count] = reg
-            count += 1
+            count = 0
+            for plan in possible_plan:
+                for query in possible_query:
+                    self.action_map[count] = str(plan)+"&"+str(query)
+                    count += 1
 
-        self.planner_action_space = Discrete(len(self.plan_map))
-        self.comm_action_space = Discrete(len(self.region_maping.keys())+1)
+        self.action_space = Discrete(len(self.action_map))
 
     def cal_vel(self, dec, dist):
         u_max = np.sqrt(2 * dec * dist)
-        time_period_dist = self.cal_dist_travelled(u_max, self.a, self.time_period)
-        effective_distance = self.view_size - time_period_dist - self.min_car_distance - (self.car_length/2)
+        time_period_dist = self.cal_dist_travelled(
+            u_max, self.a, self.time_period)
+        effective_distance = self.view_size - time_period_dist - \
+            self.min_car_distance - (self.car_length/2)
         final_u_max = np.sqrt(2 * dec * effective_distance)
         return final_u_max
 
     def findLocalview(self):
-    	self.localView_in_m = 0.0
-    	if self.comm_mode:
-    		self.localView_in_m = self.view_size - (self.view_size * self.frac_cells)
-    	else:
-    		self.localView_in_m = self.view_size
-
-    def findLocalViewIndex(self):
-        all_index = list(np.arange(0, self.num_cols))
-        
-        for reg in self.region_maping.keys():
-            cols = self.region_maping[reg]
-            for col in cols:
-                all_index.remove(col)
-
-        return all_index
+        self.localView_in_m = 0.0
+        if self.comm_mode:
+            self.localView_in_m = self.view_size - \
+                (self.view_size * self.frac_cells)
+        else:
+            self.localView_in_m = self.view_size
 
     def readTFConfig(self):
         self.max_duration = self.config_file["tf-config"]["max-dur"]
@@ -258,6 +260,16 @@ class TrafficSim():
             expandedPts.append(a[0]+a[1])
 
         return expandedPts
+
+    def findLocalViewIndex(self):
+        all_index = list(np.arange(0, self.num_cols))
+        
+        for reg in self.region_maping.keys():
+            cols = self.region_maping[reg]
+            for col in cols:
+                all_index.remove(col)
+
+        return all_index
 
     def init_render(self):
         pygame.init()
@@ -284,8 +296,10 @@ class TrafficSim():
         self.text_board.fill((128, 128, 128))
         self.text_board.set_alpha(80)
 
-        self.red_light = pygame.image.load(os.getcwd() + "/" + "SingleLaneIDM/SimulatorCode/images/red.png").convert_alpha()
-        self.green_light = pygame.image.load(os.getcwd() + "/" + "SingleLaneIDM/SimulatorCode/images/green.png").convert_alpha()
+        self.red_light = pygame.image.load(
+            os.getcwd() + "/" + "SingleLaneIDMAge/SimulatorCode/images/red.png").convert_alpha()
+        self.green_light = pygame.image.load(
+            os.getcwd() + "/" + "SingleLaneIDMAge/SimulatorCode/images/green.png").convert_alpha()
 
         # --- DISPLAY BOX END ---#
 
@@ -323,30 +337,30 @@ class TrafficSim():
         return arc_length_in_metres
 
     def cal_acc(self, s_alpha, delta_v_alpha, v_alpha, v_not):
-    	
-    	relative_vel = None
-    	bump_bump_dis = None
 
-    	if s_alpha < self.localView_in_m:
-    		relative_vel = delta_v_alpha
-    		bump_bump_dis = s_alpha
-    	else:
-    		allowed_max_lv = np.sqrt(2 * self.b * self.localView_in_m)
-    		relative_vel = v_alpha - allowed_max_lv
-    		#print(allowed_max_lv)
-    		bump_bump_dis = self.localView_in_m
+        relative_vel = None
+        bump_bump_dis = None
 
-    	s_star = self.s_not + max(0, ((v_alpha*self.T) + ((v_alpha*relative_vel)/(2*np.sqrt(self.a*self.b)))))
-    	acc = self.a * (1 - ((v_alpha/v_not) **
-                     self.delta) - ((s_star/bump_bump_dis)**2))
+        if s_alpha < self.localView_in_m:
+            relative_vel = delta_v_alpha
+            bump_bump_dis = s_alpha
+        else:
+            allowed_max_lv = np.sqrt(2 * self.b * self.localView_in_m)
+            relative_vel = v_alpha - allowed_max_lv
+            # print(allowed_max_lv)
+            bump_bump_dis = self.localView_in_m
 
-    	'''
+        s_star = self.s_not + \
+            max(0, ((v_alpha*self.T) + ((v_alpha*relative_vel)/(2*np.sqrt(self.a*self.b)))))
+        acc = self.a * (1 - ((v_alpha/v_not) **
+                             self.delta) - ((s_star/bump_bump_dis)**2))
+
+        '''
     	if self.acc_noise:
     		noise = np.random.normal(0.0, .2)
     		return acc + noise
     	'''
-    	return acc
-
+        return acc
 
     def cal_dist_travelled(self, u, acc, time):
         dist = (u*time) + (0.5*acc*time*time)
@@ -376,7 +390,7 @@ class TrafficSim():
 
         self.screen.fill(self.color_background)
         # for lane 1
-            
+
         self.road_boundary(self.screen, self.color_white,
                            self.radius, self.lane_thickness, self.centre)
         self.road(self.screen, self.road_color, self.radius -
@@ -387,11 +401,11 @@ class TrafficSim():
         if self.render_grid:
             self.draw_occupancy()
 
-        x,y = self.get_coordinates(0.0, self.lane_radius[0])
-        lane_string = "lane : %d"%(0)
-        lane_text = self.font2.render(lane_string, False, (0, 0,0 ))
-        self.screen.blit(lane_text, (x+30,y))
-    
+        x, y = self.get_coordinates(0.0, self.lane_radius[0])
+        lane_string = "lane : %d" % (0)
+        lane_text = self.font2.render(lane_string, False, (0, 0, 0))
+        self.screen.blit(lane_text, (x+30, y))
+
         for lane in range(0, 1):
             for car in range(0, len(self.lane_map_list[lane])):
                 x, y = self.get_coordinates(
@@ -400,27 +414,34 @@ class TrafficSim():
                     self.draw_car((int(x), int(y)), self.color_yellow)
                 elif(self.lane_map_list[lane][car][self.lab2ind['agent']] == 1):
                     self.draw_car((int(x), int(y)), self.color_lime)
-                    #print(lane)
+                    # print(lane)
                 self.screen.blit(self.text_board, (150, 150))
-                speed_string = 'Agent Speed : %.2f '%(speed*3.6)+' km/hr'
+                speed_string = 'Agent Speed : %.2f ' % (speed*3.6)+' km/hr'
                 speed_text = self.font.render(speed_string, False, ((0, 0, 0)))
                 area_string = 'Visiblity : '+str(self.view_size)+' m'
                 area_text = self.font.render(area_string, False, (0, 0, 0))
-                reward_string = 'Agent Reward : %.2f' % (reward["planner"])
+                reward_string = 'Agent Reward : %.2f' % (reward)
                 reward_text = self.font.render(reward_string, False, (0, 0, 0))
-                time_string = 'Time Elapsed : %d s' % (int(self.time_elapsed))
+                time_string = 'Time Elapsed : %.1f s' % (self.time_elapsed)
                 time_text = self.font.render(time_string, False, (0, 0, 0))
                 sample_string = 'Sampling Rate : %d Hz' % (
                     int(1/self.time_period))
                 sample_text = self.font.render(sample_string, False, (0, 0, 0))
-                action_string = 'Action : '+ action
+                if action == None:
+                    action_string = 'Action : None'
+                else:
+                    action_string = 'Action : '+self.plan_map_reverse[action]
                 action_text = self.font.render(action_string, False, (0, 0, 0))
                 query_string = 'Query : '+str(query)
                 query_text = self.font.render(query_string, False, (0, 0, 0))
-                maxSpeed_string = 'Max Agent Speed : %.2f km/hr'%(self.max_vel * 3.6)
-                maxSpeed_text = self.font.render(maxSpeed_string, False, (0, 0, 0))
-                maxSpeed_nonEgostring = "Non-Ego Max: %.2f km/hr"%(self.other_max_vel * 3.6)
-                maxSpeed_nonEgostring_text = self.font.render(maxSpeed_nonEgostring, False, (0, 0, 0))
+                maxSpeed_string = 'Max Agent Speed : %.2f km/hr' % (
+                    self.max_vel * 3.6)
+                maxSpeed_text = self.font.render(
+                    maxSpeed_string, False, (0, 0, 0))
+                maxSpeed_nonEgostring = "Non-Ego Max: %.2f km/hr" % (
+                    self.other_max_vel * 3.6)
+                maxSpeed_nonEgostring_text = self.font.render(
+                    maxSpeed_nonEgostring, False, (0, 0, 0))
 
                 self.screen.blit(speed_text, (155, 155))
                 self.screen.blit(area_text, (155, 180))
@@ -445,17 +466,21 @@ class TrafficSim():
                 self.screen.blit(self.green_light, self.light_x_y)
 
             # Draw traffic Line
-            x1,y1 = self.get_coordinates(0.0, self.lane_radius[0] + 20)
-            x2,y2 = self.get_coordinates(0.0, self.lane_radius[0] - 20)
+            x1, y1 = self.get_coordinates(0.0, self.lane_radius[0] + 20)
+            x2, y2 = self.get_coordinates(0.0, self.lane_radius[0] - 20)
             pygame.draw.line(self.screen, (0, 0, 0), (x1, y1), (x2, y2), 3)
 
         pygame.display.flip()
-        self.clock.tick(self.fps)
+
+        if self.enable_frame_capture:
+            pass
+        else:
+            self.clock.tick(self.fps)
 
     def get_lidar_data(self):
 
         self.lidar_data = np.ones((self.num_cols, self.num_cols, 3))
-        #print(self.lidar_data.shape)
+        # print(self.lidar_data.shape)
         if self.update_graphs_method == "occ":
             half = int(self.num_cols/2)
             ahead_part1 = np.flip(self.occ_grid[0][half:], axis=0)
@@ -469,15 +494,15 @@ class TrafficSim():
             back_part = {0: back_part1}
 
             space = int(self.num_cols/6)
-            #print(space)
+            # print(space)
             line1 = space
             line2 = line1 + space
             line3 = line2 + space
             line4 = line3 + space
 
             lane1_mid = line1 + int((line2 - line1)/2)
-            lane2_mid = line2 + int((line3 - line2)/2) 
-            lane3_mid = line3 + int((line4 - line3)/2) 
+            lane2_mid = line2 + int((line3 - line2)/2)
+            lane3_mid = line3 + int((line4 - line3)/2)
             mid_map = {0: lane1_mid, 1: lane2_mid, 2: lane3_mid}
             #print(lane1_mid, lane2_mid, lane3_mid)
             #self.lidar_data[line1][:][:] = 0
@@ -536,7 +561,7 @@ class TrafficSim():
             back_part = {0: back_part1, 1: back_part2, 2: back_part3}
 
             space = int(self.num_cols/6)
-            #print(space)
+            # print(space)
             line1 = space
             line2 = line1 + space
             line3 = line2 + space
@@ -596,7 +621,7 @@ class TrafficSim():
         light_tuple[self.lab2ind["angle"]] = 0.0
         light_tuple[self.lab2ind["vel"]] = 0.0
         light_tuple[self.lab2ind["lane"]] = lane
-        light_tuple[self.lab2ind["agent"]] = 2 # Denotes Traffic Light
+        light_tuple[self.lab2ind["agent"]] = 2  # Denotes Traffic Light
         light_tuple[self.lab2ind["id"]] = -1
 
         return light_tuple
@@ -617,13 +642,10 @@ class TrafficSim():
 
         obs = np.array(obs)
 
-        assert obs.shape[0] == self.comm_observation_space.shape[0]
+        assert obs.shape[0] == self.extended_view_cols
 
         return obs
 
-
-
-        
     def reset(self, density=None):
 
         if density == None:
@@ -637,12 +659,12 @@ class TrafficSim():
         self.num_cars = int(density*self.max_cars)
         self.random_trajec[0] = np.random.randint(
             0, self.trajectories[str(density)]['lane0']['total_count'])
-        
 
         self.lane_map = {}
-        self.lane_map[0] = np.array(self.trajectories[str(density)]['lane0']['data'][self.random_trajec[0]], dtype=[('angle', 'f8'), ('vel', 'f8'), ('lane', 'i4'), ('agent', 'i4'), ('id', 'i4')])
-        
-        #print(self.lane_map[0])
+        self.lane_map[0] = np.array(self.trajectories[str(density)]['lane0']['data'][self.random_trajec[0]], dtype=[
+                                    ('angle', 'f8'), ('vel', 'f8'), ('lane', 'i4'), ('agent', 'i4'), ('id', 'i4')])
+
+        # print(self.lane_map[0])
         self.lane_map_list = {}
         self.lane_map_list[0] = list(self.lane_map[0])
 
@@ -652,9 +674,14 @@ class TrafficSim():
         self.track_vel_list[0] = {}
 
         self.agent_lane = 0
-        loc = np.random.randint(0, len(self.lane_map_list[self.agent_lane]))
-        self.lane_map_list[self.agent_lane][loc][self.lab2ind['agent']] = 1
+        if not self.test_mode:
+            loc = np.random.randint(0, len(self.lane_map_list[self.agent_lane]))
+            self.lane_map_list[self.agent_lane][loc][self.lab2ind['agent']] = 1
+        else:
+            self.lane_map_list[self.agent_lane][0][self.lab2ind["agent"]] = 1
+
         self.agent_id = None
+        self.num_cars_in_setup = len(self.lane_map_list[0])
 
         del self.lane_map
 
@@ -670,42 +697,65 @@ class TrafficSim():
                 self.track_vel_list[lane][veh_id] = veh_vel
 
         self.get_occupancy_grid()
-        self.dones = set()
 
-        # Create age vectors
+        # Create Age Vectors
         self.agent_age = -1 * np.ones(self.num_cols)
         self.true_age = -1 * np.ones(self.num_cols)
 
-        agent_age_obs = self.agevec2obs(self.agent_age, init_t=True)
+        agent_age_obs = self.agevec2obs(self.agent_age, init_t = True)
         self.agevec2obs(self.true_age, init_t=True)
+
+        #print(agent_age_obs)
+        #print(self.agent_age)
+        #print(self.true_age)
+
 
         # Set traffic Lights
         if self.enable_traffic_light:
             self.set_red_light = False
-            self.genObj.reset()
-            self.genPts = self.genObj.gen()
-            #print(self.genPts)
-            self.expanded_pts = self.expandPts(self.genPts)
-        
+            if not self.test_mode:
+                self.genObj.reset()
+                self.genPts = self.genObj.gen()
+                # print(self.genPts)
+                self.expanded_pts = self.expandPts(self.genPts)
+            else:
+                with open(self.test_mode_trajec_file, "rb") as handle:
+                    self.expanded_pts = pickle.load(handle)
+            
+
+            #print(self.expanded_pts)
+
         self.occ_track = self.occ_grid.copy()
         self.vel_track = self.vel_grid.copy()
 
         if self.render:
-            self.draw_graphics({"planner": 0.0}, "None", None)
+            self.draw_graphics(0.0, None, None)
 
-        observation = {}
-        if self.planner_gets_age:
-            observation["planner"] = np.concatenate((self.occ_track[0], self.vel_track[0], agent_age_obs)).copy()
-        else:
-            observation["planner"] = np.array((self.occ_grid, self.vel_grid)).flatten().copy()
-        observation["comm"] = agent_age_obs.copy()
-        
-        return observation
+            if self.enable_frame_capture:
+                self.curr_screen = pygame.surfarray.array3d(self.screen)
+                self.curr_screen = np.flip(self.curr_screen, axis=0)
+                self.curr_screen = np.rot90(self.curr_screen, k=-1)[:, :570]
+                self.curr_screen = cv2.resize(self.curr_screen, dsize=(285, 250), interpolation=cv2.INTER_CUBIC)
+
+
+        res = np.concatenate((self.occ_grid[0], self.vel_grid[0], agent_age_obs)).copy()
+        #print("Occ : ", self.occ_grid)
+        #print("Vel : ", self.vel_grid)
+        # print("----------------------")
+        #agent_vel = self.lane_map_list[self.agent_lane][0][self.lab2ind["vel"]]
+        #agent_vel = np.array(agent_vel).reshape(1,)
+
+        #res = np.append(self.occ_grid, agent_vel)
+        #print(self.genPts)
+        #print(self.random_trajec)
+
+        return res.copy()
 
     def is_valid(self, lane, vech_list, angle, agent_index):
 
         if (agent_index < (len(vech_list[lane])-1)):
-            delta = vech_list[lane][agent_index+1][self.lab2ind['angle']] - angle
+            delta = vech_list[lane][agent_index +
+                                    1][self.lab2ind['angle']] - angle
         else:
             delta = vech_list[lane][0][self.lab2ind['angle']] - angle
             delta = delta % 360
@@ -727,16 +777,15 @@ class TrafficSim():
         all_lanes = [0]
         lane_mapping = {0: 0}
 
-        lane_deltas = [np.rad2deg((self.cell_size*self.x_pixel_one_metre)/self.lane_radius[0])]
+        lane_deltas = [np.rad2deg(
+            (self.cell_size*self.x_pixel_one_metre)/self.lane_radius[0])]
         # Forward Grids
-
-        local_indexes = int((self.num_cols/2) - ((self.num_cols/2) * self.frac_cells))
 
         for lane in all_lanes:
 
             forward_angle_curr_lane = self.lane_map_list[agent_lane][agent_cell][self.lab2ind['angle']]
 
-            for i in range(0, local_indexes):
+            for i in range(0, int(len(self.occ_grid[0])/2)):
 
                 old_forward_angle_curr_lane = forward_angle_curr_lane
                 forward_angle_curr_lane += lane_deltas[lane]
@@ -760,11 +809,11 @@ class TrafficSim():
 
                 array_offset = int((len(self.occ_grid[0])/2))
 
-                if (self.occ_track[lane_mapping[lane]][array_offset+i] == 1):
+                if (self.occ_grid[lane_mapping[lane]][array_offset+i] == 1):
                     pygame.draw.polygon(self.screen, (0, 0, 0), p, 0)
-                elif (self.occ_track[lane_mapping[lane]][array_offset+i] == 2):
+                elif (self.occ_grid[lane_mapping[lane]][array_offset+i] == 2):
                     pygame.draw.polygon(self.screen, self.dark_green, p, 0)
-                elif (self.occ_track[lane_mapping[lane]][array_offset+i] == -1):
+                elif (self.occ_grid[lane_mapping[lane]][array_offset+i] == -1):
                     pygame.draw.polygon(self.screen, self.color_red, p, 0)
                 else:
                     pygame.draw.polygon(self.screen, self.color_white, p, 1)
@@ -774,7 +823,7 @@ class TrafficSim():
 
             forward_angle_curr_lane = self.lane_map_list[agent_lane][agent_cell][self.lab2ind['angle']]
 
-            for i in range(0, local_indexes):
+            for i in range(0, int(len(self.occ_grid[0])/2)):
 
                 old_forward_angle_curr_lane = forward_angle_curr_lane
                 forward_angle_curr_lane -= lane_deltas[lane]
@@ -798,11 +847,11 @@ class TrafficSim():
                 p.append((cx, cy))
 
                 half_len = int(len(self.occ_grid[0])/2)
-                if (self.occ_track[lane_mapping[lane]][half_len-1-i] == 1):
+                if (self.occ_grid[lane_mapping[lane]][half_len-1-i] == 1):
                     pygame.draw.polygon(self.screen, (0, 0, 0), p, 0)
-                elif (self.occ_track[lane_mapping[lane]][half_len-1-i] == 2):
+                elif (self.occ_grid[lane_mapping[lane]][half_len-1-i] == 2):
                     pygame.draw.polygon(self.screen, self.dark_green, p, 0)
-                elif (self.occ_track[lane_mapping[lane]][half_len-1-i] == -1):
+                elif (self.occ_grid[lane_mapping[lane]][half_len-1-i] == -1):
                     pygame.draw.polygon(self.screen, self.color_red, p, 0)
                 else:
                     pygame.draw.polygon(self.screen, self.color_white, p, 1)
@@ -815,28 +864,32 @@ class TrafficSim():
         agent_lane = self.agent_lane
         agent_cell = None
 
-        self.lane_map_list[0] = sorted(self.lane_map_list[0], key=lambda x: x[self.lab2ind['angle']])
-        
-        agent_cell = [i for i, tup in enumerate(self.lane_map_list[agent_lane]) if tup[self.lab2ind["agent"]] == 1][0]
+        self.lane_map_list[0] = sorted(
+            self.lane_map_list[0], key=lambda x: x[self.lab2ind['angle']])
+
+        agent_cell = [i for i, tup in enumerate(
+            self.lane_map_list[agent_lane]) if tup[self.lab2ind["agent"]] == 1][0]
 
         all_lanes = [0]
         lane_mapping = {0: 0}
 
-        view_size_theta = [np.rad2deg((self.view_size*self.x_pixel_one_metre)/self.lane_radius[0])]
+        view_size_theta = [np.rad2deg(
+            (self.view_size*self.x_pixel_one_metre)/self.lane_radius[0])]
         agent_angle = self.lane_map_list[agent_lane][agent_cell][self.lab2ind['angle']]
 
         # Forward
         for lane in all_lanes:
 
-            shift = np.rad2deg(self.car_length/2 * self.x_pixel_one_metre)/self.lane_radius[lane]
+            shift = np.rad2deg(self.car_length/2 *
+                               self.x_pixel_one_metre)/self.lane_radius[lane]
             forward_done = False
             _next_ = None
-            
+
             for j in range(0, len(self.lane_map_list[lane])):
                 if (self.lane_map_list[lane][j][self.lab2ind['angle']] - shift > agent_angle):
                     _next_ = j
                     break
-            
+
             if (_next_ == None):
                 _next_ = 0
 
@@ -850,7 +903,7 @@ class TrafficSim():
                     next_car_angle += 360
 
                 angle_diff = next_car_angle - agent_angle - shift
-                
+
                 '''
                 if lane == 1:
                     print(angle_diff, self.time_elapsed)
@@ -876,7 +929,6 @@ class TrafficSim():
 
                 angle_diff = next_car_angle - agent_angle - shift
 
-
                 angle_diff = (angle_diff) % 360
 
                 if (angle_diff <= view_size_theta[lane]):
@@ -899,7 +951,7 @@ class TrafficSim():
                         _next_ = 0
                     else:
                         _next_ += 1
-        
+
         num_indexs_others = math.ceil((self.car_length)/self.cell_size)
         half = int(len(self.occ_grid[0])/2) - 1
         tmp_copy = np.copy(self.occ_grid)
@@ -912,18 +964,20 @@ class TrafficSim():
                     self.occ_grid[lane][i+1:i + num_indexs_others + 1] = 1
                     val = self.vel_grid[lane][i]
                     self.vel_grid[lane][i+1:i + num_indexs_others + 1] = val
-        
+
         tmp = {}
-        tmp[0] = sorted(self.lane_map_list[0], key=lambda x: x[self.lab2ind['angle']], reverse=True)
+        tmp[0] = sorted(self.lane_map_list[0],
+                        key=lambda x: x[self.lab2ind['angle']], reverse=True)
 
         for lane in all_lanes:
 
             backward_done = False
             _prev_ = None
 
-            for j in range(0,len(tmp[lane])):
+            for j in range(0, len(tmp[lane])):
                 if (tmp[lane][j][self.lab2ind['angle']] + shift < agent_angle):
-                    _prev_ = [i for i,tup in enumerate(self.lane_map_list[lane]) if tup[self.lab2ind['angle']] == tmp[lane][j][self.lab2ind['angle']]] [0]
+                    _prev_ = [i for i, tup in enumerate(
+                        self.lane_map_list[lane]) if tup[self.lab2ind['angle']] == tmp[lane][j][self.lab2ind['angle']]][0]
                     break
 
             if (_prev_ == None):
@@ -932,23 +986,22 @@ class TrafficSim():
             count = 0
             copy_prev = _prev_
 
-
             for x in range(0, len(self.lane_map_list[lane])):
 
                 prev_car_angle = self.lane_map_list[lane][copy_prev]['angle'] + shift
                 #prev_car_angle += np.rad2deg( (self.car_length/2 * self.x_pixel_one_metre)/ self.lane_radius[lane])
-                angle_diff =  (agent_angle - prev_car_angle)
+                angle_diff = (agent_angle - prev_car_angle)
 
-                angle_diff = (angle_diff%360)
+                angle_diff = (angle_diff % 360)
                 if (angle_diff <= view_size_theta[lane]):
-                    count +=1
+                    count += 1
                     copy_prev -= 1
                     if (copy_prev < 0):
                         copy_prev = len(self.lane_map_list[lane])-1
                 else:
                     break
 
-            for x in range(0,count):
+            for x in range(0, count):
                 #print('Inside 128')
                 prev_car_angle = self.lane_map_list[lane][_prev_]['angle'] + shift
                 #prev_car_angle += np.rad2deg( (self.car_length/2 * self.x_pixel_one_metre)/ self.lane_radius[lane])
@@ -958,22 +1011,25 @@ class TrafficSim():
                 angle_diff = (angle_diff % 360)
 
                 if (angle_diff <= view_size_theta[lane]):
-                    distance_covered = np.deg2rad(angle_diff)*self.lane_radius[lane]
-                    distance_covered_metres = (1/self.x_pixel_one_metre)*distance_covered
+                    distance_covered = np.deg2rad(
+                        angle_diff)*self.lane_radius[lane]
+                    distance_covered_metres = (
+                        1/self.x_pixel_one_metre)*distance_covered
                     index = distance_covered_metres/float(self.cell_size)
 
                     #num_indexs = math.ceil((self.car_length)/self.cell_size)
                     half_len = int(len(self.occ_grid[0])/2)
-                    self.occ_grid[lane_mapping[lane]][half_len-1- int(index)] = 1
-                    self.vel_grid[lane_mapping[lane]][half_len-1- int(index)] = prev_car_vel
+                    self.occ_grid[lane_mapping[lane]
+                                  ][half_len-1 - int(index)] = 1
+                    self.vel_grid[lane_mapping[lane]][half_len -
+                                                      1 - int(index)] = prev_car_vel
                     _prev_ -= 1
 
         tmp_copy = np.copy(self.occ_grid)
         half_len = int(len(self.occ_grid[0])/2)
         num_indexs = math.ceil((self.car_length*0.5)/self.cell_size)
         num_indexs_others = math.ceil((self.car_length)/self.cell_size)
-        
-        
+
         for lane in range(0, 1):
             for i in range(0, half_len):
 
@@ -987,7 +1043,7 @@ class TrafficSim():
                         self.occ_grid[lane][i - num_indexs_others: i] = 1
                         val = self.vel_grid[lane][i]
                         self.vel_grid[lane][i - num_indexs_others: i] = val
-        
+
         # 2 is used to identify the agent in occupancy grid. Can't do this in for loop.
         half_len = int(len(self.occ_grid[0])/2)
         num_indexs = math.ceil((self.car_length*0.5)/self.cell_size)
@@ -1008,23 +1064,30 @@ class TrafficSim():
         other_lanes = [0]
         other_lanes.pop(agent_lane)
         for other_lane in other_lanes:
-            for car in range( len(self.lane_map_list[other_lane])):
+            for car in range(len(self.lane_map_list[other_lane])):
 
                 if (self.lane_map_list[other_lane][car][self.lab2ind['angle']] >= low_range and self.lane_map_list[other_lane][car][self.lab2ind['angle']] <= high_range):
                     view_angle = agent_angle - view_size_theta[other_lane]
                     angle_diff = self.lane_map_list[other_lane][car][self.lab2ind['angle']] - view_angle
                     angle_diff = angle_diff % 360
-                    
-                    distance_covered = np.deg2rad(angle_diff) * self.lane_radius[other_lane]
-                    distance_covered_metres = (1/self.x_pixel_one_metre) * distance_covered
+
+                    distance_covered = np.deg2rad(
+                        angle_diff) * self.lane_radius[other_lane]
+                    distance_covered_metres = (
+                        1/self.x_pixel_one_metre) * distance_covered
                     index = distance_covered_metres / float(self.cell_size)
                     self.occ_grid[other_lane][int(index)] = 1
-                    self.vel_grid[other_lane][int(index)] = self.lane_map_list[other_lane][car][self.lab2ind["vel"]]
-                    self.occ_grid[other_lane][int(index)+1:int(index)+num_indexs+1] = 1
-                    self.occ_grid[other_lane][int(index)-num_indexs:int(index)] = 1
+                    self.vel_grid[other_lane][int(
+                        index)] = self.lane_map_list[other_lane][car][self.lab2ind["vel"]]
+                    self.occ_grid[other_lane][int(
+                        index)+1:int(index)+num_indexs+1] = 1
+                    self.occ_grid[other_lane][int(
+                        index)-num_indexs:int(index)] = 1
                     val = self.vel_grid[other_lane][int(index)]
-                    self.vel_grid[other_lane][int(index)+1:int(index)+num_indexs+1] = val
-                    self.vel_grid[other_lane][int(index)-num_indexs:int(index)] = val
+                    self.vel_grid[other_lane][int(
+                        index)+1:int(index)+num_indexs+1] = val
+                    self.vel_grid[other_lane][int(
+                        index)-num_indexs:int(index)] = val
 
         '''
         if (self.comm_mode):
@@ -1054,12 +1117,14 @@ class TrafficSim():
 
         half = int(len(self.occ_grid[0])/2) - 1
         num_indexs_others = int(math.ceil((self.car_length)/self.cell_size)/2)
-        forward_sum = self.occ_grid[self.agent_lane][half + num_indexs_others + 1:].sum()
+        forward_sum = self.occ_grid[self.agent_lane][half +
+                                                     num_indexs_others + 1:].sum()
 
         if forward_sum == 0:
             if len(self.lane_map_list[lane]) > 2:
 
-                agent_idx = [i for i, tup in enumerate(self.lane_map_list[self.agent_lane]) if tup[self.lab2ind["agent"]] == 1][0]
+                agent_idx = [i for i, tup in enumerate(
+                    self.lane_map_list[self.agent_lane]) if tup[self.lab2ind["agent"]] == 1][0]
                 agent_angle = self.lane_map_list[self.agent_lane][agent_idx][self.lab2ind["angle"]]
 
                 index = None
@@ -1079,9 +1144,9 @@ class TrafficSim():
                     angle_diff = (other_car_angle + 360) - agent_angle
 
                 angle_diff = angle_diff % 360
-                
+
                 if (angle_diff > self.view_size_theta[self.agent_lane] + 10):
-                    
+
                     #forward_min_theta = np.rad2deg(((((self.s_not))*self.x_pixel_one_metre)/self.lane_radius[self.agent_lane]))
                     forward_min_theta = 10
                     index_forward = None
@@ -1095,7 +1160,7 @@ class TrafficSim():
                         index_forward = 0
 
                     reverse_map = self.lane_map_list[self.agent_lane][::-1]
-                    #print(reverse_map)
+                    # print(reverse_map)
                     #print("Other Car angle : ", other_car_angle)
                     #print("Front", self.lane_map_list[self.agent_lane][index_forward])
 
@@ -1103,27 +1168,31 @@ class TrafficSim():
                     for j in range(0, len(reverse_map)):
                         if (reverse_map[j][self.lab2ind["angle"]] < other_car_angle):
                             index_prev = j
-                            #print("Inside")
+                            # print("Inside")
                             break
-                    
+
                     if index_prev == None:
                         index_prev = len(reverse_map) - 1
 
-                    forward_diff = self.lane_map_list[self.agent_lane][index_forward][self.lab2ind["angle"]] - other_car_angle
-                    
+                    forward_diff = self.lane_map_list[self.agent_lane][
+                        index_forward][self.lab2ind["angle"]] - other_car_angle
+
                     if forward_diff < 0.0:
-                        forward_diff = (self.lane_map_list[self.agent_lane][index_forward][self.lab2ind["angle"]] + 360)- other_car_angle
+                        forward_diff = (
+                            self.lane_map_list[self.agent_lane][index_forward][self.lab2ind["angle"]] + 360) - other_car_angle
 
                     forward_diff = forward_diff % 360
 
-                    back_diff = other_car_angle - reverse_map[index_prev][self.lab2ind["angle"]]
+                    back_diff = other_car_angle - \
+                        reverse_map[index_prev][self.lab2ind["angle"]]
 
                     if back_diff < 0.0:
-                        back_diff = (other_car_angle + 360) - reverse_map[index_prev][self.lab2ind["angle"]]
+                        back_diff = (other_car_angle + 360) - \
+                            reverse_map[index_prev][self.lab2ind["angle"]]
 
                     back_diff = back_diff % 360
-                    #print(back_diff)
-                    
+                    # print(back_diff)
+
                     res1 = forward_diff > forward_min_theta
                     res2 = back_diff > forward_min_theta
 
@@ -1131,7 +1200,8 @@ class TrafficSim():
                         copy_lane_map = copy.deepcopy(self.lane_map_list)
                         veh = copy_lane_map[lane].pop(index)
                         veh[self.lab2ind["lane"]] = self.agent_lane
-                        copy_lane_map[self.agent_lane].insert(len(copy_lane_map[self.agent_lane]), veh)
+                        copy_lane_map[self.agent_lane].insert(
+                            len(copy_lane_map[self.agent_lane]), veh)
                         self.lane_map_list = copy.deepcopy(copy_lane_map)
                 '''
                 if index != None:
@@ -1161,10 +1231,13 @@ class TrafficSim():
                         copy_lane_map[self.agent_lane].insert(len(copy_lane_map[self.agent_lane]), veh)
                         self.lane_map_list = copy.deepcopy(copy_lane_map)
                         '''
+
     def calculate_reward(self):
 
-        agent_idx = [i for i, tup in enumerate(self.lane_map_list[self.agent_lane]) if tup[self.lab2ind["agent"]] == 1][0]
-        rew = (self.lane_map_list[self.agent_lane][agent_idx][self.lab2ind["vel"]])/self.max_vel
+        agent_idx = [i for i, tup in enumerate(
+            self.lane_map_list[self.agent_lane]) if tup[self.lab2ind["agent"]] == 1][0]
+        rew = (self.lane_map_list[self.agent_lane]
+               [agent_idx][self.lab2ind["vel"]])/self.max_vel
         return rew
 
     def occChangeDetector(self, old_occ, new_occ, prev_vel, new_vel, change_store):
@@ -1173,7 +1246,6 @@ class TrafficSim():
 
             if ((new_occ[0][col] != old_occ[0][col]) or (new_vel[0][col]!=prev_vel[0][col])):
                 change_store[0][col] = 1
-
 
     def toggleTrafficLight(self):
         self.set_red_light = not self.set_red_light
@@ -1185,31 +1257,40 @@ class TrafficSim():
         prev_occ = self.occ_grid.copy()
         prev_vel = self.vel_grid.copy()
 
-        action = self.plan_map_reverse[rec["planner"]]
-        query = self.comm_map_reverse[rec["comm"]]
-
         #print(self.expanded_pts, self.num_steps)
         if self.enable_traffic_light:
             if self.num_steps in self.expanded_pts:
                 self.toggleTrafficLight()
                 #print("Toggled Traffic Light , Red : ", self.set_red_light)
-        
-        self.decoded_action = action
-        self.decoded_query  = query
 
-        self.lane_map_list[0] = sorted(self.lane_map_list[0], key=lambda x: x[self.lab2ind['angle']])
+        '''
+
+        #print(self.num_steps)
+        for event in pygame.event.get():
+            if event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_SPACE:
+                    self.toggleTrafficLight()
+                    print("Done", self.set_red_light)
+        '''
+        action, query = self.action_decoder(rec)
+        self.decoded_action = action
+        self.decoded_query = query
+
+        self.lane_map_list[0] = sorted(
+            self.lane_map_list[0], key=lambda x: x[self.lab2ind['angle']])
 
         reward = 0.0
         game_over = False
 
-        agent_idx = [i for i, tup in enumerate(self.lane_map_list[self.agent_lane]) if tup[self.lab2ind["agent"]] == 1][0]
-        
+        agent_idx = [i for i, tup in enumerate(
+            self.lane_map_list[self.agent_lane]) if tup[self.lab2ind["agent"]] == 1][0]
+
         agent_vel = self.lane_map_list[self.agent_lane][agent_idx][self.lab2ind['vel']]
         agent_angle = self.lane_map_list[self.agent_lane][agent_idx][self.lab2ind['angle']]
         prev_agent_angle = copy.deepcopy(agent_angle)
 
         if self.external_controller:
-            if (action == "acc"):
+            if (action == 0):
 
                 if (agent_vel >= self.v_not):
                     acc = 0
@@ -1230,7 +1311,8 @@ class TrafficSim():
                 if res:
                     self.lane_map_list[self.agent_lane][agent_idx][self.lab2ind['vel']] = self.cal_new_velocity(
                         agent_vel, acc, self.time_period)
-                    self.lane_map_list[self.agent_lane][agent_idx][self.lab2ind['angle']] = new_agent_theta
+                    self.lane_map_list[self.agent_lane][agent_idx][self.lab2ind['angle']
+                                                                   ] = new_agent_theta
                     #reward = self.lane_map_list[self.agent_lane][agent_idx][self.lab2ind['vel']]
                     #reward = (self.lane_map_list[self.agent_lane][agent_idx][self.lab2ind['vel']] - 0)/(self.v_not - 0)
                 else:
@@ -1240,7 +1322,7 @@ class TrafficSim():
                     self.lane_map_list[self.agent_lane][agent_idx][self.lab2ind['vel']] = 0.0
                     self.lane_map_list[self.agent_lane][agent_idx][self.lab2ind['angle']] = agent_angle
 
-            elif (action == "dec"):
+            elif (action == 1):
 
                 if (agent_vel <= 0.0):
                     acc = 0
@@ -1275,8 +1357,10 @@ class TrafficSim():
 
                 if res:
                     #reward = agent_distance_travelled_metre
-                    self.lane_map_list[self.agent_lane][agent_idx][self.lab2ind['vel']] = new_agent_vel
-                    self.lane_map_list[self.agent_lane][agent_idx][self.lab2ind['angle']] = new_agent_theta
+                    self.lane_map_list[self.agent_lane][agent_idx][self.lab2ind['vel']
+                                                                   ] = new_agent_vel
+                    self.lane_map_list[self.agent_lane][agent_idx][self.lab2ind['angle']
+                                                                   ] = new_agent_theta
                     #reward = (self.lane_map_list[self.agent_lane][agent_idx][self.lab2ind['vel']] - 0)/(self.v_not - 0)
                     #reward = self.lane_map_list[self.agent_lane][agent_idx][self.lab2ind['vel']]
 
@@ -1287,7 +1371,7 @@ class TrafficSim():
                     self.lane_map_list[self.agent_lane][agent_idx][self.lab2ind['vel']] = 0.0
                     self.lane_map_list[self.agent_lane][agent_idx][self.lab2ind['angle']] = agent_angle
 
-            elif (action == "do-nothing"):
+            elif (action == 2):
 
                 agent_distance_travelled_metre = self.cal_dist_travelled(
                     agent_vel, 0, self.time_period)
@@ -1304,8 +1388,10 @@ class TrafficSim():
 
                 if res:
                     #reward = agent_distance_travelled_metre
-                    self.lane_map_list[self.agent_lane][agent_idx][self.lab2ind['vel']] = new_agent_vel
-                    self.lane_map_list[self.agent_lane][agent_idx][self.lab2ind['angle']] = new_agent_theta
+                    self.lane_map_list[self.agent_lane][agent_idx][self.lab2ind['vel']
+                                                                   ] = new_agent_vel
+                    self.lane_map_list[self.agent_lane][agent_idx][self.lab2ind['angle']
+                                                                   ] = new_agent_theta
                     #reward = (self.lane_map_list[self.agent_lane][agent_idx][self.lab2ind['vel']] - 0)/(self.v_not - 0)
                     #reward = self.lane_map_list[self.agent_lane][agent_idx][self.lab2ind['vel']]
                 else:
@@ -1317,22 +1403,25 @@ class TrafficSim():
         else:
             pass
 
-        agent_idx = [i for i, tup in enumerate(self.lane_map_list[self.agent_lane]) if tup[self.lab2ind["agent"]] == 1][0]
+        agent_idx = [i for i, tup in enumerate(
+            self.lane_map_list[self.agent_lane]) if tup[self.lab2ind["agent"]] == 1][0]
         lastest_agent_angle = self.lane_map_list[self.agent_lane][agent_idx][self.lab2ind["angle"]]
 
         diff = lastest_agent_angle - prev_agent_angle
         if diff < 0:
             diff = (diff % 360) + 360
-        
+
         self.agent_id = self.lane_map_list[self.agent_lane][agent_idx][self.lab2ind["id"]]
         self.track_map_list[self.agent_lane][self.agent_id] += diff
-        
+
         if self.enable_traffic_light:
             if self.set_red_light:
-                self.lane_map_list[self.agent_lane].append(self.create_dummy_traffic_tuple(self.agent_lane))
+                self.lane_map_list[self.agent_lane].append(
+                    self.create_dummy_traffic_tuple(self.agent_lane))
 
-        self.lane_map_list[0] = sorted(self.lane_map_list[0], key=lambda x: x[self.lab2ind['angle']])
-        
+        self.lane_map_list[0] = sorted(
+            self.lane_map_list[0], key=lambda x: x[self.lab2ind['angle']])
+
         theta_diff = 0.0
         delta_v_alpha = 0.0
         v_alpha = 0.0
@@ -1347,8 +1436,8 @@ class TrafficSim():
         new_theta = 0.0
         self.new_velocity_map = {0: []}
         self.new_theta_map = {0: []}
-        
-        for lane in range(0,1):
+
+        for lane in range(0, 1):
             for i in range(0, len(self.lane_map_list[lane])):
 
                 check_value = None
@@ -1368,47 +1457,60 @@ class TrafficSim():
 
                 if not (self.lane_map_list[lane][i][self.lab2ind['agent']] == check_value or self.lane_map_list[lane][i][self.lab2ind['agent']] == light_check_value):
 
-                    if (i< ( len(self.lane_map_list[lane]) - 1)):
-                        theta_diff = self.lane_map_list[lane][i+1][self.lab2ind['angle']] - self.lane_map_list[lane][i][self.lab2ind['angle']]
-                        delta_v_alpha = self.lane_map_list[lane][i][self.lab2ind['vel']] - self.lane_map_list[lane][i+1][self.lab2ind['vel']]
+                    if (i < (len(self.lane_map_list[lane]) - 1)):
+                        theta_diff = self.lane_map_list[lane][i+1][self.lab2ind['angle']
+                                                                   ] - self.lane_map_list[lane][i][self.lab2ind['angle']]
+                        delta_v_alpha = self.lane_map_list[lane][i][self.lab2ind['vel']
+                                                                    ] - self.lane_map_list[lane][i+1][self.lab2ind['vel']]
                         v_alpha = self.lane_map_list[lane][i][self.lab2ind['vel']]
                     else:
-                        theta_diff = self.lane_map_list[lane][0][self.lab2ind['angle']] - self.lane_map_list[lane][i][self.lab2ind['angle']]
+                        theta_diff = self.lane_map_list[lane][0][self.lab2ind['angle']
+                                                                 ] - self.lane_map_list[lane][i][self.lab2ind['angle']]
                         theta_diff = theta_diff % 360
-                        delta_v_alpha = self.lane_map_list[lane][i][self.lab2ind['vel']] - self.lane_map_list[lane][0][self.lab2ind['vel']]
+                        delta_v_alpha = self.lane_map_list[lane][i][self.lab2ind['vel']
+                                                                    ] - self.lane_map_list[lane][0][self.lab2ind['vel']]
                         v_alpha = self.lane_map_list[lane][i][self.lab2ind['vel']]
 
-                    car_gap_in_metre = self.return_arc_length(self.lane_radius[lane],theta_diff)
+                    car_gap_in_metre = self.return_arc_length(
+                        self.lane_radius[lane], theta_diff)
                     s_alpha = car_gap_in_metre - self.car_length
-                    idm_acc = self.cal_acc(s_alpha,delta_v_alpha,v_alpha, self.other_max_vel)
-                    dist_travelled_in_metre = self.cal_dist_travelled(v_alpha,idm_acc,self.time_period)
+                    idm_acc = self.cal_acc(
+                        s_alpha, delta_v_alpha, v_alpha, self.other_max_vel)
+                    dist_travelled_in_metre = self.cal_dist_travelled(
+                        v_alpha, idm_acc, self.time_period)
 
                     if dist_travelled_in_metre < 0:
-                        rounded_dist_travelled_in_metre = round(dist_travelled_in_metre,1)
-                        error = max(rounded_dist_travelled_in_metre,dist_travelled_in_metre) - min(rounded_dist_travelled_in_metre,dist_travelled_in_metre)
+                        rounded_dist_travelled_in_metre = round(
+                            dist_travelled_in_metre, 1)
+                        error = max(rounded_dist_travelled_in_metre, dist_travelled_in_metre) - min(
+                            rounded_dist_travelled_in_metre, dist_travelled_in_metre)
                         # print('Error in Calculation : ',error)
                         rounded_dist_travelled_in_metre = 0.0
                         dist_travelled_in_metre = rounded_dist_travelled_in_metre
 
-
-                    new_velocity = self.cal_new_velocity(v_alpha,idm_acc,self.time_period)
+                    new_velocity = self.cal_new_velocity(
+                        v_alpha, idm_acc, self.time_period)
                     if new_velocity < 0:
                         new_velocity = 0
 
                     self.new_velocity_map[lane].append(new_velocity)
 
                     dist_travelled_in_pixels = self.x_pixel_one_metre*dist_travelled_in_metre
-                    new_theta = self.get_theta(self.lane_radius[lane],dist_travelled_in_pixels,'idm')
+                    new_theta = self.get_theta(
+                        self.lane_radius[lane], dist_travelled_in_pixels, 'idm')
                     self.new_theta_map[lane].append(new_theta)
                 else:
-                    #print(self.lane_map_list[lane][i])
-                    self.new_velocity_map[self.agent_lane].append(self.lane_map_list[self.agent_lane][i][self.lab2ind['vel']])
+                    # print(self.lane_map_list[lane][i])
+                    self.new_velocity_map[self.agent_lane].append(
+                        self.lane_map_list[self.agent_lane][i][self.lab2ind['vel']])
                     self.new_theta_map[self.agent_lane].append(0)
 
-        for lane in range(0,1):
+        for lane in range(0, 1):
             for i in range(0, len(self.new_velocity_map[lane])):
-                self.lane_map_list[lane][i][self.lab2ind['vel']] = self.new_velocity_map[lane][i]
-                self.lane_map_list[lane][i][self.lab2ind['angle']] += self.new_theta_map[lane][i]
+                self.lane_map_list[lane][i][self.lab2ind['vel']
+                                            ] = self.new_velocity_map[lane][i]
+                self.lane_map_list[lane][i][self.lab2ind['angle']
+                                            ] += self.new_theta_map[lane][i]
                 veh_info = self.lane_map_list[lane][i]
                 veh_id = veh_info[self.lab2ind["id"]]
                 if veh_id < 0:
@@ -1426,35 +1528,34 @@ class TrafficSim():
                 self.track_vel_list[lane][veh_id] = veh_vel
 
                 if self.lane_map_list[lane][i][self.lab2ind['angle']] > 360:
-                    #print("yes")
+                    # print("yes")
                     self.lane_map_list[lane][i][self.lab2ind['angle']] %= 360
 
-        #print(self.lane_map_list[0])
+        # print(self.lane_map_list[0])
 
         if self.enable_traffic_light:
             if self.set_red_light:
-                light_index = [i for i, tup in enumerate(self.lane_map_list[self.agent_lane]) if tup[self.lab2ind["agent"]] == 2][0]
+                light_index = [i for i, tup in enumerate(
+                    self.lane_map_list[self.agent_lane]) if tup[self.lab2ind["agent"]] == 2][0]
                 self.lane_map_list[self.agent_lane].pop(light_index)
-        
+
         self.get_occupancy_grid()
 
         self.detect_change = np.zeros(self.occ_grid.shape)
         self.occChangeDetector(prev_occ, self.occ_grid, prev_vel, self.vel_grid, self.detect_change)
 
-
-        # ----  Update True Age ---- #
+        # ---- Update True Age ---- #
         for col in range(0, prev_occ.shape[1]):
             if self.detect_change[0][col] == 1.0:
                 self.true_age[col] = 0.0
             else:
                 self.true_age[col] = min(1, self.true_age[col] + self.age_time_step)
-        # ----  Update True Age ---- #
-
+        # ---- Update True Age ---- #
 
         # ---- Update Agent Age ---- #
         for col in range(0, self.agent_age.shape[0]):
             self.agent_age[col] = min(1, self.agent_age[col] + self.age_time_step)
-        
+
         if query == "NULL":
             pass
         else:
@@ -1463,19 +1564,18 @@ class TrafficSim():
                 self.agent_age[col] = self.true_age[col]
         # ---- Update Agent Age ---- #
 
-
         self.time_elapsed += self.time_period
 
-        self.lane_map_list[0] = sorted(self.lane_map_list[0], key=lambda x: x[self.lab2ind['angle']])
-        
+        self.lane_map_list[0] = sorted(
+            self.lane_map_list[0], key=lambda x: x[self.lab2ind['angle']])
 
-        # ---- Observations ---- #
         comm_obs = []
         for key in self.region_maping.keys():
             for col in self.region_maping[key]:
                 comm_obs.append(self.agent_age[col])
-        comm_obs = np.array(comm_obs)
 
+        comm_obs = np.array(comm_obs)
+        
         # Copy local view first
         for index in self.local_indexes:
             self.occ_track[0][index] = self.occ_grid[0][index]
@@ -1489,53 +1589,44 @@ class TrafficSim():
                 self.occ_track[0][col] = self.occ_grid[0][col]
                 self.vel_track[0][col] = self.vel_grid[0][col]
 
-        observation = {}
-        observation["comm"] = comm_obs.copy()
-        if self.planner_gets_age:
-            observation["planner"] = np.concatenate((self.occ_track[0], self.vel_track[0], comm_obs)).copy()
-        else:
-            observation["planner"] = np.array((self.occ_track, self.vel_track)).flatten().copy()
+        reward = self.calculate_reward()
 
-        # ---- Observations ---- #
+        self.before_comm_reward = reward
 
-        # ----- Rewards ---- #
-        reward = {}
-        reward["planner"] = self.calculate_reward()
+        if self.comm_mode:
+            if (query == "NULL"):
+                reward += 0.1
 
-        if self.share_planner_reward_with_comm:
-            reward["comm"] = (-comm_obs.mean() + reward["planner"])
-        else:
-            reward["comm"] = -comm_obs.mean()
-        # ----- Rewards ---- #
-
-        # ----- info ---- #
-        info = {}
-        info["planner"] = {}
-        info["comm"] = {}
-        # ----- info ---- #
-
-        # ----- done ---- #
-        dones = {}
-        if game_over:
-            self.dones.add(list(rec.keys())[0])
-            self.dones.add(list(rec.keys())[1])
-            dones["planner"] = True
-            dones["comm"] = True
-            dones["__all__"] = True
-        else:
-            dones["planner"] = False
-            dones["comm"] = False
-            dones["__all__"] = False
-        # ----- done ---- #
+        res = np.concatenate((self.occ_track[0], self.vel_track[0], comm_obs))
+        #print("Occ : ", self.occ_grid)
+        #print("Vel : ", self.vel_grid)
+        # print("----------------------")
+        #agent_idx = [i for i, tup in enumerate(self.lane_map_list[self.agent_lane]) if tup[self.lab2ind["agent"]] == 1][0]
+        #agent_vel = self.lane_map_list[self.agent_lane][agent_idx][self.lab2ind["vel"]]
+        #agent_vel = agent_vel.reshape(1, )
 
         if self.render:
             self.draw_graphics(reward, action, query)
 
-        return observation, reward, dones, info
+            if self.enable_frame_capture:
+                self.curr_screen = pygame.surfarray.array3d(self.screen)
+                self.curr_screen = np.flip(self.curr_screen, axis=0)
+                self.curr_screen = np.rot90(self.curr_screen, k=-1)[:, :570]
+                self.curr_screen = cv2.resize(self.curr_screen, dsize=(285, 250), interpolation=cv2.INTER_CUBIC)
+                
+
+        #res = np.append(self.occ_grid.flatten(), agent_vel)
+        #res = np.array((self.occ_grid, self.vel_grid)).flatten()
+        '''
+        if game_over:
+            res[-1] = -1 # this is done to denote terminal state
+        '''
+        return (res.copy(), reward, game_over, {})
 
     def destroy_window(self):
         if self.render:
             pygame.quit()
+
 
 if __name__ == "__main__":
 
@@ -1544,14 +1635,14 @@ if __name__ == "__main__":
 
     trajec_path = "/SimulatorCode/micro.pkl"
     sim_config["config"]["trajec-file-path"] = os.getcwd() + trajec_path
-    
+
     env = TrafficSim(sim_config["config"])
-    
+
     print(env.action_map)
     print(env.observation_space)
     print(env.action_space.n)
 
-    #env.reset()
+    # env.reset()
     for i in range(0, 1):
         state = env.reset(random.sample(self.densities))
         print(state)
@@ -1559,18 +1650,17 @@ if __name__ == "__main__":
         total_reward = 0.0
 
         while True:
-            
+
             #state, reward, done, _ = env.step(np.random.randint(0, 3))
             state, reward, done, _ = env.step(2)
             total_reward += reward
-            #print(state)
-            #print(reward)
+            # print(state)
+            # print(reward)
             if done:
-                #print("Inside")
+                # print("Inside")
                 print(env.agent_id)
                 print(env.track_map_list[env.agent_lane])
                 break
-                #pass
+                # pass
 
-        #print(total_reward)
-    
+        # print(total_reward)
