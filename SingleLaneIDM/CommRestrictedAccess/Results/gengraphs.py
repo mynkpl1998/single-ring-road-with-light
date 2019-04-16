@@ -15,6 +15,7 @@ parser.add_argument("--checkpoint-file", type=str, help="checkpoint file path")
 parser.add_argument("--sim-config-file", type=str, help="simulation configuration file")
 parser.add_argument("--ppo-config-file", type=str, help="ppo experiment configuration file")
 parser.add_argument("--save-file-name-path", type=str, help="file name for saving simulated data")
+parser.add_argument("--allow-pertubations", type=int, default=0, help="whether to allow traffic light pertubations or not")
 
 if __name__ == "__main__":
 
@@ -36,9 +37,14 @@ if __name__ == "__main__":
 
 	sim_config["config"]["trajec-file-path"] = os.getcwd() + trajec_path
 	sim_config["config"]["external-controller"] = True
-	sim_config["config"]["enable-traffic-light"] = True
-	sim_config["config"]["test-mode"] = True
-	sim_config["config"]["test-file-path"] = os.getcwd() + test_trajec_path
+	if args.allow_pertubations == 1:
+		sim_config["config"]["enable-traffic-light"] = True
+		sim_config["config"]["test-mode"] = True
+		sim_config["config"]["test-file-path"] = os.getcwd() + test_trajec_path
+	else:
+		sim_config["config"]["enable-traffic-light"] = False
+		sim_config["config"]["test-mode"] = False
+		sim_config["config"]["test-file-path"] = None
 
 	num_episodes = args.num_episodes
 	episode_length = args.episode_length
